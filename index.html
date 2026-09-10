@@ -1,33 +1,172 @@
-<!-- Exemplo para incluir no HTML no GitHub Pages -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  // Inicialização com a chave pública ANON do Supabase
-  const supabaseUrl = 'https://SEU_PROJETO.supabase.co';
-  const supabaseAnonKey = 'SUA_ANON_KEY';
-  const supabase = supabasejs.createClient(supabaseUrl, supabaseAnonKey);
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Controle - Pontos de Acesso</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+  <style>
+    body { padding: 20px; max-width: 1200px; margin: 0 auto; }
+    .api-key { font-family: monospace; font-size: 0.85em; background: #2a313d; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
+    .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+  </style>
+</head>
+<body>
 
-  // 1. Função para cadastrar novo Ponto de Acesso
-  async function cadastrarPonto(nome, ip, senha) {
-    const { data, error } = await supabase
-      .from('pontos_acesso')
-      .insert([{ nome, ip, senha }])
-      .select();
+  <main class="container">
+    <h2>Painel de Gerenciamento de Acessos</h2>
+    <hr>
 
-    if (data) {
-      console.log('Ponto criado! Guarde esta API Key:', data[0].api_key);
+    <!-- CONFIGURAÇÃO SUPABASE -->
+    <details>
+      <summary><strong>Configurações de Conexão (Supabase)</strong></summary>
+      <div class="grid-form" style="margin-top: 15px;">
+        <input type="text" id="supabaseUrl" placeholder="URL do Supabase (ex: https://xyz.supabase.co)">
+        <input type="text" id="supabaseAnonKey" placeholder="Chave Pública (anon key)">
+        <button onclick="salvarConfiguracoes()">Salvar e Conectar</button>
+      </div>
+    </details>
+
+    <br>
+
+    <!-- FORMULÁRIO DE CADASTRO DE PONTO DE ACESSO -->
+    <article>
+      <h3>Cadastrar Novo Ponto de Acesso</h3>
+      <form id="formPonto" onsubmit="cadastrarPonto(event)">
+        <div class="grid-form">
+          <input type="text" id="nome" placeholder="Nome (ex: Portaria Principal)" required>
+          <input type="text" id="ip" placeholder="IP Local (ex: 192.168.1.100)" required>
+          <input type="text" id="usuario" placeholder="Usuário" value="admin" required>
+          <input type="password" id="senha" placeholder="Senha" required>
+        </div>
+        <button type="submit" style="margin-top: 15px;">Cadastrar e Gerar API Key</button>
+      </form>
+    </article>
+
+    <!-- LISTA DE PONTOS DE ACESSO -->
+    <article>
+      <h3>Pontos de Acesso Cadastrados</h3>
+      <figure>
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>IP Local</th>
+              <th>Status</th>
+              <th>Chave Permanente (API Key)</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabelaPontos">
+            <tr><td colspan="5">Conecte ao Supabase para carregar os dados...</td></tr>
+          </tbody>
+        </table>
+      </figure>
+    </article>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    let supabase = null;
+
+    // Carrega credenciais do LocalStorage se existirem
+    window.onload = () => {
+      const url = localStorage.getItem('sb_url');
+      const key = localStorage.getItem('sb_key');
+      if (url && key) {
+        document.getElementById('supabaseUrl').value = url;
+        document.getElementById('supabaseAnonKey').value = key;
+        inicializarSupabase(url, key);
+      }
+    };
+
+    function salvarConfiguracoes() {
+      const url = document.getElementById('supabaseUrl').value.trim();
+      const key = document.getElementById('supabaseAnonKey').value.trim();
+      localStorage.setItem('sb_url', url);
+      localStorage.setItem('sb_key', key);
+      inicializarSupabase(url, key);
     }
-  }
 
-  // 2. Função para disparar abertura da botoeira
-  async function abrirBotoeira(pontoAcessoId) {
-    const { error } = await supabase
-      .from('comandos_dispositivo')
-      .insert([{
+    function inicializarSupabase(url, key) {
+      supabase = supabasejs.createClient(url, key);
+      carregarPontos();
+    }
+
+    async function carregarPontos() {
+      if (!supabase) return;
+      const { data, error } = await supabase.from('pontos_acesso').select('*').order('created_at', { ascending: false });
+
+      const tabela = document.getElementById('tabelaPontos');
+      tabela.innerHTML = '';
+
+      if (error) {
+        tabela.innerHTML = `<tr><td colspan="5">Erro ao carregar dados: ${error.message}</td></tr>`;
+        return;
+      }
+
+      if (data.length === 0) {
+        tabela.innerHTML = `<tr><td colspan="5">Nenhum ponto de acesso cadastrado.</td></tr>`;
+        return;
+      }
+
+      data.forEach(ponto => {
+        tabela.innerHTML += `
+          <tr>
+            <td><strong>${ponto.nome}</strong></td>
+            <td>${ponto.ip}</td>
+            <td><mark>${ponto.status}</mark></td>
+            <td><span class="api-key">${ponto.api_key || 'Não gerada'}</span></td>
+            <td>
+              <button class="contrast" onclick="enviarComandoBotoeira('${ponto.id}')">Abrir Botoeira</button>
+              <button class="secondary" onclick="excluirPonto('${ponto.id}')">Excluir</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    async function cadastrarPonto(e) {
+      e.preventDefault();
+      if (!supabase) return alert('Configure o Supabase primeiro.');
+
+      const nome = document.getElementById('nome').value;
+      const ip = document.getElementById('ip').value;
+      const usuario = document.getElementById('usuario').value;
+      const senha = document.getElementById('senha').value;
+
+      const { error } = await supabase.from('pontos_acesso').insert([{ nome, ip, usuario, senha }]);
+
+      if (error) {
+        alert('Erro ao cadastrar: ' + error.message);
+      } else {
+        document.getElementById('formPonto').reset();
+        carregarPontos();
+      }
+    }
+
+    async function enviarComandoBotoeira(pontoId) {
+      if (!supabase) return;
+
+      const { error } = await supabase.from('comandos_dispositivo').insert([{
         tipo_comando: 'ABRIR_BOTOEIRA',
-        payload: { ponto_acesso_id: pontoAcessoId },
+        payload: { ponto_acesso_id: pontoId },
         status: 'PENDENTE'
       }]);
 
-    if (!error) alert('Comando enviado!');
-  }
-</script>
+      if (error) {
+        alert('Erro ao enviar comando: ' + error.message);
+      } else {
+        alert('Comando enviado! O Servidor Local irá processá-lo.');
+      }
+    }
+
+    async function excluirPonto(id) {
+      if (!confirm('Deseja realmente remover este ponto de acesso?')) return;
+      const { error } = await supabase.from('pontos_acesso').delete().eq('id', id);
+      if (error) alert('Erro ao excluir: ' + error.message);
+      else carregarPontos();
+    }
+  </script>
+</body>
+</html>
