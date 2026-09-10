@@ -1,0 +1,33 @@
+<!-- Exemplo para incluir no HTML no GitHub Pages -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Inicialização com a chave pública ANON do Supabase
+  const supabaseUrl = 'https://SEU_PROJETO.supabase.co';
+  const supabaseAnonKey = 'SUA_ANON_KEY';
+  const supabase = supabasejs.createClient(supabaseUrl, supabaseAnonKey);
+
+  // 1. Função para cadastrar novo Ponto de Acesso
+  async function cadastrarPonto(nome, ip, senha) {
+    const { data, error } = await supabase
+      .from('pontos_acesso')
+      .insert([{ nome, ip, senha }])
+      .select();
+
+    if (data) {
+      console.log('Ponto criado! Guarde esta API Key:', data[0].api_key);
+    }
+  }
+
+  // 2. Função para disparar abertura da botoeira
+  async function abrirBotoeira(pontoAcessoId) {
+    const { error } = await supabase
+      .from('comandos_dispositivo')
+      .insert([{
+        tipo_comando: 'ABRIR_BOTOEIRA',
+        payload: { ponto_acesso_id: pontoAcessoId },
+        status: 'PENDENTE'
+      }]);
+
+    if (!error) alert('Comando enviado!');
+  }
+</script>
