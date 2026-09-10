@@ -7,8 +7,9 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
   <style>
     body { padding: 20px; max-width: 1200px; margin: 0 auto; }
-    .api-key { font-family: monospace; font-size: 0.85em; background: #2a313d; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
+    .api-key { font-family: monospace; font-size: 0.85em; background: #2a313d; color: #00ff88; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
     .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+    .status-badge { font-weight: bold; padding: 4px 8px; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -19,11 +20,11 @@
 
     <!-- CONFIGURAÇÃO SUPABASE -->
     <details>
-      <summary><strong>Configurações de Conexão (Supabase)</strong></summary>
+      <summary><strong>Configurações de Conexão com Supabase</strong></summary>
       <div class="grid-form" style="margin-top: 15px;">
-        <input type="text" id="supabaseUrl" placeholder="URL do Supabase (ex: https://xyz.supabase.co)">
+        <input type="text" id="supabaseUrl" placeholder="URL do Supabase">
         <input type="text" id="supabaseAnonKey" placeholder="Chave Pública (anon key)">
-        <button onclick="salvarConfiguracoes()">Salvar e Conectar</button>
+        <button onclick="salvarConfiguracoes()">Salvar / Reconectar</button>
       </div>
     </details>
 
@@ -34,12 +35,12 @@
       <h3>Cadastrar Novo Ponto de Acesso</h3>
       <form id="formPonto" onsubmit="cadastrarPonto(event)">
         <div class="grid-form">
-          <input type="text" id="nome" placeholder="Nome (ex: Portaria Principal)" required>
-          <input type="text" id="ip" placeholder="IP Local (ex: 192.168.1.100)" required>
+          <input type="text" id="nome" placeholder="Nome (ex: Catraca Bloco A)" required>
+          <input type="text" id="ip" placeholder="IP Local (ex: 192.168.1.150)" required>
           <input type="text" id="usuario" placeholder="Usuário" value="admin" required>
           <input type="password" id="senha" placeholder="Senha" required>
         </div>
-        <button type="submit" style="margin-top: 15px;">Cadastrar e Gerar API Key</button>
+        <button type="submit" style="margin-top: 15px;">Cadastrar Ponto de Acesso</button>
       </form>
     </article>
 
@@ -58,7 +59,7 @@
             </tr>
           </thead>
           <tbody id="tabelaPontos">
-            <tr><td colspan="5">Conecte ao Supabase para carregar os dados...</td></tr>
+            <tr><td colspan="5">Carregando dados do Supabase...</td></tr>
           </tbody>
         </table>
       </figure>
@@ -67,17 +68,20 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // Credenciais Padrão do seu projeto
+    const DEFAULT_URL = 'https://hvaibexymmbuvvuzjzld.supabase.co';
+    const DEFAULT_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWliZXh5bW1idXZ2dXpqemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTYxMTAsImV4cCI6MjEwNDUzMjExMH0.s6dow6xW_VmiTL4Qwa4vRbh154OaMx3QZlhhEWrv-P8';
+
     let supabase = null;
 
-    // Carrega credenciais do LocalStorage se existirem
     window.onload = () => {
-      const url = localStorage.getItem('sb_url');
-      const key = localStorage.getItem('sb_key');
-      if (url && key) {
-        document.getElementById('supabaseUrl').value = url;
-        document.getElementById('supabaseAnonKey').value = key;
-        inicializarSupabase(url, key);
-      }
+      const url = localStorage.getItem('sb_url') || DEFAULT_URL;
+      const key = localStorage.getItem('sb_key') || DEFAULT_ANON_KEY;
+
+      document.getElementById('supabaseUrl').value = url;
+      document.getElementById('supabaseAnonKey').value = key;
+
+      inicializarSupabase(url, key);
     };
 
     function salvarConfiguracoes() {
@@ -95,17 +99,21 @@
 
     async function carregarPontos() {
       if (!supabase) return;
-      const { data, error } = await supabase.from('pontos_acesso').select('*').order('created_at', { ascending: false });
+
+      const { data, error } = await supabase
+        .from('pontos_acesso')
+        .select('*')
+        .order('created_at', { ascending: false });
 
       const tabela = document.getElementById('tabelaPontos');
       tabela.innerHTML = '';
 
       if (error) {
-        tabela.innerHTML = `<tr><td colspan="5">Erro ao carregar dados: ${error.message}</td></tr>`;
+        tabela.innerHTML = `<tr><td colspan="5" style="color:red">Erro ao carregar dados: ${error.message}</td></tr>`;
         return;
       }
 
-      if (data.length === 0) {
+      if (!data || data.length === 0) {
         tabela.innerHTML = `<tr><td colspan="5">Nenhum ponto de acesso cadastrado.</td></tr>`;
         return;
       }
@@ -114,11 +122,11 @@
         tabela.innerHTML += `
           <tr>
             <td><strong>${ponto.nome}</strong></td>
-            <td>${ponto.ip}</td>
-            <td><mark>${ponto.status}</mark></td>
-            <td><span class="api-key">${ponto.api_key || 'Não gerada'}</span></td>
+            <td><code>${ponto.ip}</code></td>
+            <td><mark class="status-badge">${ponto.status}</mark></td>
+            <td><span class="api-key">${ponto.api_key || 'Chave não gerada'}</span></td>
             <td>
-              <button class="contrast" onclick="enviarComandoBotoeira('${ponto.id}')">Abrir Botoeira</button>
+              <button class="contrast" onclick="enviarComandoBotoeira('${ponto.id}')">Abrir Porta</button>
               <button class="secondary" onclick="excluirPonto('${ponto.id}')">Excluir</button>
             </td>
           </tr>
@@ -138,9 +146,10 @@
       const { error } = await supabase.from('pontos_acesso').insert([{ nome, ip, usuario, senha }]);
 
       if (error) {
-        alert('Erro ao cadastrar: ' + error.message);
+        alert('Erro ao cadastrar ponto: ' + error.message);
       } else {
         document.getElementById('formPonto').reset();
+        document.getElementById('usuario').value = 'admin';
         carregarPontos();
       }
     }
@@ -157,7 +166,7 @@
       if (error) {
         alert('Erro ao enviar comando: ' + error.message);
       } else {
-        alert('Comando enviado! O Servidor Local irá processá-lo.');
+        alert('Comando enviado! O Servidor Local vai processá-lo.');
       }
     }
 
