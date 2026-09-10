@@ -1,181 +1,212 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Painel de Controle - Pontos de Acesso</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
-  <style>
-    body { padding: 20px; max-width: 1200px; margin: 0 auto; }
-    .api-key { font-family: monospace; font-size: 0.85em; background: #2a313d; color: #00ff88; padding: 4px 8px; border-radius: 4px; word-break: break-all; }
-    .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-    .status-badge { font-weight: bold; padding: 4px 8px; border-radius: 4px; }
-  </style>
-</head>
-<body>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel do Ponto de Acesso - Intelbras Bio-T</title>
 
-  <main class="container">
-    <h2>Painel de Gerenciamento de Acessos</h2>
-    <hr>
+  <!-- Tailwind CSS para estilização rápida -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- CONFIGURAÇÃO SUPABASE -->
-    <details>
-      <summary><strong>Configurações de Conexão com Supabase</strong></summary>
-      <div class="grid-form" style="margin-top: 15px;">
-        <input type="text" id="supabaseUrl" placeholder="URL do Supabase">
-        <input type="text" id="supabaseAnonKey" placeholder="Chave Pública (anon key)">
-        <button onclick="salvarConfiguracoes()">Salvar / Reconectar</button>
-      </div>
-    </details>
-
-    <br>
-
-    <!-- FORMULÁRIO DE CADASTRO DE PONTO DE ACESSO -->
-    <article>
-      <h3>Cadastrar Novo Ponto de Acesso</h3>
-      <form id="formPonto" onsubmit="cadastrarPonto(event)">
-        <div class="grid-form">
-          <input type="text" id="nome" placeholder="Nome (ex: Catraca Bloco A)" required>
-          <input type="text" id="ip" placeholder="IP Local (ex: 192.168.1.150)" required>
-          <input type="text" id="usuario" placeholder="Usuário" value="admin" required>
-          <input type="password" id="senha" placeholder="Senha" required>
-        </div>
-        <button type="submit" style="margin-top: 15px;">Cadastrar Ponto de Acesso</button>
-      </form>
-    </article>
-
-    <!-- LISTA DE PONTOS DE ACESSO -->
-    <article>
-      <h3>Pontos de Acesso Cadastrados</h3>
-      <figure>
-        <table>
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>IP Local</th>
-              <th>Status</th>
-              <th>Chave Permanente (API Key)</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody id="tabelaPontos">
-            <tr><td colspan="5">Carregando dados do Supabase...</td></tr>
-          </tbody>
-        </table>
-      </figure>
-    </article>
-  </main>
-
+  <!-- Supabase JS Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-6">
+
+  <div class="max-w-4xl mx-auto space-y-6">
+    <!-- Cabeçalho -->
+    <header class="border-b border-slate-700 pb-4">
+      <h1 class="text-2xl font-bold text-sky-400">Painel IoT - Controle de Acesso</h1>
+      <p class="text-sm text-slate-400">Integração Intelbras Bio-T via ESP32 Bridge e Supabase</p>
+    </header>
+
+    <!-- Seção 1: Pontes ESP32 Detectadas -->
+    <section class="bg-slate-800 p-5 rounded-lg border border-slate-700 shadow">
+      <h2 class="text-lg font-semibold text-slate-200 mb-3">1. ESP32 Gateways (Pontes Conectadas)</h2>
+      <div id="lista-esp32" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <p class="text-slate-500 text-sm">Buscando dispositivos na nuvem...</p>
+      </div>
+    </section>
+
+    <!-- Seção 2: Cadastrar Equipamento Intelbras Bio-T -->
+    <section class="bg-slate-800 p-5 rounded-lg border border-slate-700 shadow">
+      <h2 class="text-lg font-semibold text-slate-200 mb-4">2. Cadastrar Ponto de Acesso (Intelbras Bio-T)</h2>
+      
+      <form id="form-cadastro" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Nome do Equipamento</label>
+          <input type="text" id="nome" required placeholder="Ex: Catraca Principal" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Ponte (ESP32) do Local</label>
+          <select id="esp32_bridge_id" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
+            <option value="">Selecione um ESP32...</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">IP Local do Bio-T</label>
+          <input type="text" id="ip_local" required placeholder="192.168.1.50" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Usuário Admin</label>
+          <input type="text" id="usuario_admin" value="admin" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-xs font-medium text-slate-400 mb-1">Senha Admin do Bio-T</label>
+          <input type="password" id="senha_admin" required placeholder="Senha de acesso da API" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
+        </div>
+
+        <div class="md:col-span-2">
+          <button type="submit" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium py-2 rounded text-sm transition">
+            Salvar Equipamento no Supabase
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Seção 3: Dispositivos Cadastrados e Ações -->
+    <section class="bg-slate-800 p-5 rounded-lg border border-slate-700 shadow">
+      <h2 class="text-lg font-semibold text-slate-200 mb-4">3. Dispositivos e Testes de Conexão</h2>
+      <div id="lista-pontos" class="space-y-3">
+        <p class="text-slate-500 text-sm">Carregando lista de dispositivos...</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- Script da Aplicação Web -->
   <script>
-    // Credenciais Padrão do seu projeto
-    const DEFAULT_URL = 'https://hvaibexymmbuvvuzjzld.supabase.co';
-    const DEFAULT_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWliZXh5bW1idXZ2dXpqemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTYxMTAsImV4cCI6MjEwNDUzMjExMH0.s6dow6xW_VmiTL4Qwa4vRbh154OaMx3QZlhhEWrv-P8';
+    // Configurações do Supabase
+    const SUPABASE_URL = 'https://hvaibexymmbuvvuzjzld.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWliZXh5bW1idXZ2dXpqemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTYxMTAsImV4cCI6MjEwNDUzMjExMH0.s6dow6xW_VmiTL4Qwa4vRbh154OaMx3QZlhhEWrv-P8';
 
-    let supabase = null;
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    window.onload = () => {
-      const url = localStorage.getItem('sb_url') || DEFAULT_URL;
-      const key = localStorage.getItem('sb_key') || DEFAULT_ANON_KEY;
+    // Carregar os ESP32 cadastrados
+    async function carregarESP32() {
+      const { data, error } = await supabase.from('esp32_bridges').select('*');
+      const container = document.getElementById('lista-esp32');
+      const select = document.getElementById('esp32_bridge_id');
 
-      document.getElementById('supabaseUrl').value = url;
-      document.getElementById('supabaseAnonKey').value = key;
-
-      inicializarSupabase(url, key);
-    };
-
-    function salvarConfiguracoes() {
-      const url = document.getElementById('supabaseUrl').value.trim();
-      const key = document.getElementById('supabaseAnonKey').value.trim();
-      localStorage.setItem('sb_url', url);
-      localStorage.setItem('sb_key', key);
-      inicializarSupabase(url, key);
-    }
-
-    function inicializarSupabase(url, key) {
-      supabase = supabasejs.createClient(url, key);
-      carregarPontos();
-    }
-
-    async function carregarPontos() {
-      if (!supabase) return;
-
-      const { data, error } = await supabase
-        .from('pontos_acesso')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      const tabela = document.getElementById('tabelaPontos');
-      tabela.innerHTML = '';
-
-      if (error) {
-        tabela.innerHTML = `<tr><td colspan="5" style="color:red">Erro ao carregar dados: ${error.message}</td></tr>`;
+      if (error || !data.length) {
+        container.innerHTML = `<p class="text-rose-400 text-sm col-span-2">Nenhum ESP32 registrado ainda.</p>`;
         return;
       }
 
-      if (!data || data.length === 0) {
-        tabela.innerHTML = `<tr><td colspan="5">Nenhum ponto de acesso cadastrado.</td></tr>`;
+      container.innerHTML = '';
+      select.innerHTML = '<option value="">Selecione um ESP32...</option>';
+
+      data.forEach(esp => {
+        container.innerHTML += `
+          <div class="bg-slate-900 p-3 rounded border border-slate-700 text-xs space-y-1">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-sky-400">${esp.nome || 'ESP32 Gateway'}</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${esp.status === 'ONLINE' ? 'bg-emerald-900 text-emerald-300' : 'bg-rose-900 text-rose-300'}">${esp.status}</span>
+            </div>
+            <p class="text-slate-400"><strong>IP Local:</strong> ${esp.ip_local}</p>
+            <p class="text-slate-400"><strong>MAC:</strong> ${esp.mac_address}</p>
+          </div>
+        `;
+
+        select.innerHTML += `<option value="${esp.id}">${esp.nome} (${esp.ip_local})</option>`;
+      });
+    }
+
+    // Carregar Pontos de Acesso
+    async function carregarPontosAcesso() {
+      const { data, error } = await supabase.from('pontos_acesso').select('*');
+      const container = document.getElementById('lista-pontos');
+
+      if (error || !data.length) {
+        container.innerHTML = `<p class="text-slate-500 text-sm">Nenhum ponto de acesso cadastrado.</p>`;
         return;
       }
 
+      container.innerHTML = '';
       data.forEach(ponto => {
-        tabela.innerHTML += `
-          <tr>
-            <td><strong>${ponto.nome}</strong></td>
-            <td><code>${ponto.ip}</code></td>
-            <td><mark class="status-badge">${ponto.status}</mark></td>
-            <td><span class="api-key">${ponto.api_key || 'Chave não gerada'}</span></td>
-            <td>
-              <button class="contrast" onclick="enviarComandoBotoeira('${ponto.id}')">Abrir Porta</button>
-              <button class="secondary" onclick="excluirPonto('${ponto.id}')">Excluir</button>
-            </td>
-          </tr>
+        container.innerHTML += `
+          <div class="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div>
+              <h3 class="font-bold text-slate-200 text-sm">${ponto.nome}</h3>
+              <p class="text-xs text-slate-400">IP: ${ponto.ip_local} | Modelo: ${ponto.modelo}</p>
+            </div>
+            <div class="flex items-center gap-3 w-full md:w-auto">
+              <button onclick="testarConexao('${ponto.id}', '${ponto.ip_local}')" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3 py-1.5 rounded transition">
+                Testar Conexão
+              </button>
+            </div>
+          </div>
         `;
       });
     }
 
-    async function cadastrarPonto(e) {
+    // Cadastrar Novo Ponto de Acesso
+    document.getElementById('form-cadastro').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!supabase) return alert('Configure o Supabase primeiro.');
 
-      const nome = document.getElementById('nome').value;
-      const ip = document.getElementById('ip').value;
-      const usuario = document.getElementById('usuario').value;
-      const senha = document.getElementById('senha').value;
+      const novoPonto = {
+        nome: document.getElementById('nome').value,
+        esp32_bridge_id: document.getElementById('esp32_bridge_id').value,
+        ip_local: document.getElementById('ip_local').value,
+        usuario_admin: document.getElementById('usuario_admin').value,
+        senha_admin: document.getElementById('senha_admin').value
+      };
 
-      const { error } = await supabase.from('pontos_acesso').insert([{ nome, ip, usuario, senha }]);
-
-      if (error) {
-        alert('Erro ao cadastrar ponto: ' + error.message);
-      } else {
-        document.getElementById('formPonto').reset();
-        document.getElementById('usuario').value = 'admin';
-        carregarPontos();
-      }
-    }
-
-    async function enviarComandoBotoeira(pontoId) {
-      if (!supabase) return;
-
-      const { error } = await supabase.from('comandos_dispositivo').insert([{
-        tipo_comando: 'ABRIR_BOTOEIRA',
-        payload: { ponto_acesso_id: pontoId },
-        status: 'PENDENTE'
-      }]);
+      const { error } = await supabase.from('pontos_acesso').insert([novoPonto]);
 
       if (error) {
-        alert('Erro ao enviar comando: ' + error.message);
+        alert('Erro ao salvar: ' + error.message);
       } else {
-        alert('Comando enviado! O Servidor Local vai processá-lo.');
+        alert('Dispositivo cadastrado com sucesso!');
+        document.getElementById('form-cadastro').reset();
+        carregarPontosAcesso();
       }
+    });
+
+    // Disparar Comando de Teste na Fila e Ouvir Resposta em Tempo Real (Realtime)
+    async function testarConexao(pontoId, ipLocal) {
+      alert(`Enviando ordem de teste para o ESP32 verificar o IP ${ipLocal}...`);
+
+      const { data, error } = await supabase
+        .from('fila_comandos')
+        .insert([{ comando: 'TESTAR_CONEXAO', payload: { ponto_id: pontoId, ip: ipLocal } }])
+        .select();
+
+      if (error) {
+        alert('Erro ao disparar comando: ' + error.message);
+        return;
+      }
+
+      const comandoId = data[0].id;
+
+      // Escutar a resposta do ESP32 ao vivo usando a publicação do Supabase Realtime
+      const canal = supabase
+        .channel('mudanca_comando')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'fila_comandos', filter: `id=eq.${comandoId}` },
+          (payload) => {
+            const status = payload.new.status;
+            const resposta = payload.new.resposta;
+
+            if (status === 'CONCLUIDO') {
+              alert(`✅ RESPOSTA DO ESP32:\n\n${resposta}`);
+              supabase.removeChannel(canal);
+            } else if (status === 'ERRO') {
+              alert(`❌ ERRO NO TESTE:\n\n${resposta}`);
+              supabase.removeChannel(canal);
+            }
+          }
+        )
+        .subscribe();
     }
 
-    async function excluirPonto(id) {
-      if (!confirm('Deseja realmente remover este ponto de acesso?')) return;
-      const { error } = await supabase.from('pontos_acesso').delete().eq('id', id);
-      if (error) alert('Erro ao excluir: ' + error.message);
-      else carregarPontos();
-    }
+    // Inicialização
+    carregarESP32();
+    carregarPontosAcesso();
   </script>
 </body>
 </html>
