@@ -2,56 +2,134 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Painel Intelbras Bio-T - Controle ESP32</title>
+  <title>Painel Intelbras Bio-T - Gestão de Pontos de Acesso</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 20px; max-width: 500px; margin: auto; }
-    .card { background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-    input, button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 4px; border: none; box-sizing: border-box; }
-    input { background: #2c2c2c; color: #fff; }
-    button { background: #007bff; color: #fff; font-weight: bold; cursor: pointer; }
+    body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 20px; max-width: 550px; margin: auto; }
+    .card { background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 15px; }
+    input, select, button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 4px; border: 1px solid #333; box-sizing: border-box; }
+    input, select { background: #2c2c2c; color: #fff; }
+    button { background: #007bff; color: #fff; font-weight: bold; cursor: pointer; border: none; }
     button:hover { background: #0056b3; }
-    #log { margin-top: 15px; padding: 10px; background: #000; border-radius: 4px; font-family: monospace; white-space: pre-wrap; font-size: 12px; min-height: 80px; max-height: 200px; overflow-y: auto; }
+    .btn-green { background: #28a745; }
+    .btn-green:hover { background: #218838; }
+    #log { margin-top: 15px; padding: 10px; background: #000; border-radius: 4px; font-family: monospace; white-space: pre-wrap; font-size: 12px; min-height: 90px; max-height: 220px; overflow-y: auto; }
   </style>
 </head>
 <body>
 
 <div class="card">
-  <h2>Conectar Intelbras Bio-T</h2>
+  <h2>Cadastrar Ponto de Acesso</h2>
   
-  <label>IP do Bio-T (Rede Local):</label>
-  <input type="text" id="ipBioT" value="192.168.1.50" placeholder="Ex: 192.168.1.50">
+  <label>Nome do Dispositivo:</label>
+  <input type="text" id="nomePonto" placeholder="Ex: Catraca Principal / Bio-T Entrada" value="Intelbras Bio-T">
 
-  <label>Usuário:</label>
+  <label>IP do Dispositivo (Rede Local):</label>
+  <input type="text" id="ipBioT" value="192.168.1.19" placeholder="Ex: 192.168.1.19">
+
+  <label>Usuário Admin:</label>
   <input type="text" id="usuarioBioT" value="admin">
 
-  <label>Senha:</label>
-  <input type="password" id="senhaBioT" placeholder="Sua senha do Bio-T">
+  <label>Senha Admin:</label>
+  <input type="password" id="senhaBioT" placeholder="Sua senha do dispositivo">
 
-  <button onclick="enviarComandoTeste()">Testar Conexão (Digest Auth)</button>
+  <button class="btn-green" onclick="salvarPontoAcesso()">1. Salvar no Supabase (pontos_acesso)</button>
+</div>
+
+<div class="card">
+  <h2>Testar Conexão e Disparo</h2>
+
+  <label>Agente Executor:</label>
+  <select id="executor">
+    <option value="SERVIDOR_PC">Servidor Windows (C# Local)</option>
+    <option value="ESP32">Controlador ESP32</option>
+  </select>
+
+  <button onclick="testarConexao()">2. Testar Conexão / Digest Auth</button>
 
   <label>Status da Execução:</label>
-  <div id="log">Aguardando comando...</div>
+  <div id="log">Aguardando ação...</div>
 </div>
 
 <script>
   const SUPABASE_URL = "https://hvaibexymmbuvvuzjzld.supabase.co/rest/v1";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWliZXh5bW1idXZ2dXpqemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTYxMTAsImV4cCI6MjEwNDUzMjExMH0.s6dow6xW_VmiTL4Qwa4vRbh154OaMx3QZlhhEWrv-P8";
+  const SUPABASE_KEY = "sb_publishable_k_hvJag0v2hXvmiL3niNgA_m07tCtpT";
 
-  async function enviarComandoTeste() {
+  let pontoAcessoIdGlobal = null;
+
+  // 1. Cadastra ou Atualiza o dispositivo na tabela 'pontos_acesso'
+  async function salvarPontoAcesso() {
+    const nome = document.getElementById('nomePonto').value;
     const ip = document.getElementById('ipBioT').value;
     const usuario = document.getElementById('usuarioBioT').value;
     const senha = document.getElementById('senhaBioT').value;
     const log = document.getElementById('log');
 
-    if (!ip || !senha) {
-      alert("Por favor, preencha o IP e a Senha do Bio-T.");
+    if (!nome || !ip || !senha) {
+      alert("Por favor, preencha o Nome, IP e a Senha.");
       return;
     }
 
-    log.innerText = "[1/3] Enviando comando para a fila do Supabase...";
+    log.innerText = "[+] Salvando ponto de acesso no Supabase...";
 
-    // 1. Insere o comando na tabela 'fila_comandos'
     try {
+      // Upsert com base no IP
+      const response = await fetch(`${SUPABASE_URL}/pontos_acesso`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Prefer": "return=representation, resolution=merge-duplicates"
+        },
+        body: JSON.stringify({
+          nome: nome,
+          ip_local: ip,
+          usuario_admin: usuario,
+          senha_admin: senha
+        })
+      });
+
+      const data = await response.json();
+      if (data && data.length > 0) {
+        pontoAcessoIdGlobal = data[0].id;
+        log.innerText = `[SUCESSO] Ponto de Acesso Cadastrado!\nID: ${pontoAcessoIdGlobal}\nIP: ${data[0].ip_local}`;
+      } else {
+        log.innerText = "[ERRO] Erro ao cadastrar ponto de acesso.";
+      }
+    } catch (err) {
+      log.innerText = "[ERRO] Falha de comunicação com Supabase: " + err.message;
+    }
+  }
+
+  // 2. Insere a solicitação de comando na tabela 'fila_comandos'
+  async function testarConexao() {
+    const ip = document.getElementById('ipBioT').value;
+    const usuario = document.getElementById('usuarioBioT').value;
+    const senha = document.getElementById('senhaBioT').value;
+    const executor = document.getElementById('executor').value;
+    const log = document.getElementById('log');
+
+    log.innerText = `[1/3] Enviando comando de teste via ${executor}...`;
+
+    try {
+      const payloadObj = {
+        parametros: "action=openDoor&channel=1",
+        ip: ip,
+        usuario: usuario,
+        senha: senha,
+        executor_destino: executor
+      };
+
+      const bodyData = {
+        comando: "accessControl",
+        payload: JSON.stringify(payloadObj),
+        status: "PENDENTE"
+      };
+
+      if (pontoAcessoIdGlobal) {
+        bodyData.ponto_acesso_id = pontoAcessoIdGlobal;
+      }
+
       const response = await fetch(`${SUPABASE_URL}/fila_comandos`, {
         method: "POST",
         headers: {
@@ -60,28 +138,25 @@
           "Authorization": `Bearer ${SUPABASE_KEY}`,
           "Prefer": "return=representation"
         },
-        body: JSON.stringify({
-          comando: "TESTAR_CONEXAO",
-          payload: { ip, usuario, senha }
-        })
+        body: JSON.stringify(bodyData)
       });
 
       const data = await response.json();
       const comandoId = data[0].id;
-      
-      log.innerText = `[2/3] Comando criado (ID: ${comandoId}). Aguardando ESP32 processar...`;
 
-      // 2. Faz polling para aguardar a resposta do ESP32
-      aguardarRespostaESP32(comandoId);
+      log.innerText = `[2/3] Comando inserido na fila (ID: ${comandoId}). Aguardando processamento por ${executor}...`;
+
+      monitorarComando(comandoId);
 
     } catch (err) {
       log.innerText = "[ERRO] Falha ao enviar para o Supabase: " + err.message;
     }
   }
 
-  function aguardarRespostaESP32(comandoId) {
+  // 3. Aguarda o serviço local ou ESP32 marcar como PROCESSADO/CONCLUIDO/ERRO
+  function monitorarComando(comandoId) {
     const log = document.getElementById('log');
-    
+
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`${SUPABASE_URL}/fila_comandos?id=eq.${comandoId}`, {
@@ -90,24 +165,26 @@
             "Authorization": `Bearer ${SUPABASE_KEY}`
           }
         });
-        
-        const data = await res.json();
-        const cmd = data[0];
 
-        if (cmd.status === "PROCESSANDO") {
-          log.innerText = "[3/3] ESP32 capturou o comando. Calculando Digest Auth MD5 no Bio-T...";
-        } else if (cmd.status === "CONCLUIDO") {
-          clearInterval(interval);
-          log.innerText = "SUCCESS! RESPOSTA DO BIO-T:\n" + cmd.resposta;
-        } else if (cmd.status === "ERRO") {
-          clearInterval(interval);
-          log.innerText = "ERRO NA EXECUÇÃO:\n" + cmd.resposta;
+        const data = await res.json();
+        if (data.length > 0) {
+          const cmd = data[0];
+
+          if (cmd.status === "PROCESSANDO") {
+            log.innerText = "[3/3] Agente capturou o comando. Autenticando via Digest Auth no dispositivo...";
+          } else if (cmd.status === "PROCESSADO" || cmd.status === "CONCLUIDO") {
+            clearInterval(interval);
+            log.innerText = "SUCCESS! COMANDO EXECUTADO COM SUCESSO NO DISPOSITIVO:\n" + (cmd.resposta || "Sucesso sem detalhes");
+          } else if (cmd.status === "ERRO") {
+            clearInterval(interval);
+            log.innerText = "ERRO NA EXECUÇÃO:\n" + (cmd.resposta || "Erro desconhecido");
+          }
         }
       } catch (err) {
         clearInterval(interval);
-        log.innerText = "[ERRO] Falha ao checar status: " + err.message;
+        log.innerText = "[ERRO] Falha ao consultar o status do comando: " + err.message;
       }
-    }, 1500); // Checa o status a cada 1.5s
+    }, 1500);
   }
 </script>
 
