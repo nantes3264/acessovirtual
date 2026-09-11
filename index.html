@@ -1,212 +1,115 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Painel do Ponto de Acesso - Intelbras Bio-T</title>
-
-  <!-- Tailwind CSS para estilização rápida -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Supabase JS Client -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <meta charset="UTF-8">
+  <title>Painel Intelbras Bio-T - Controle ESP32</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 20px; max-width: 500px; margin: auto; }
+    .card { background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+    input, button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 4px; border: none; box-sizing: border-box; }
+    input { background: #2c2c2c; color: #fff; }
+    button { background: #007bff; color: #fff; font-weight: bold; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    #log { margin-top: 15px; padding: 10px; background: #000; border-radius: 4px; font-family: monospace; white-space: pre-wrap; font-size: 12px; min-height: 80px; max-height: 200px; overflow-y: auto; }
+  </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-6">
+<body>
 
-  <div class="max-w-4xl mx-auto space-y-6">
-    <!-- Cabeçalho -->
-    <header class="border-b border-slate-700 pb-4">
-      <h1 class="text-2xl font-bold text-sky-400">Painel IoT - Controle de Acesso</h1>
-      <p class="text-sm text-slate-400">Integração Intelbras Bio-T via ESP32 Bridge e Supabase</p>
-    </header>
+<div class="card">
+  <h2>Conectar Intelbras Bio-T</h2>
+  
+  <label>IP do Bio-T (Rede Local):</label>
+  <input type="text" id="ipBioT" value="192.168.1.50" placeholder="Ex: 192.168.1.50">
 
-    <!-- Seção 1: Pontes ESP32 Detectadas -->
-    <section class="bg-slate-800 p-5 rounded-lg border border-slate-700 shadow">
-      <h2 class="text-lg font-semibold text-slate-200 mb-3">1. ESP32 Gateways (Pontes Conectadas)</h2>
-      <div id="lista-esp32" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <p class="text-slate-500 text-sm">Buscando dispositivos na nuvem...</p>
-      </div>
-    </section>
+  <label>Usuário:</label>
+  <input type="text" id="usuarioBioT" value="admin">
 
-    <!-- Seção 2: Cadastrar Equipamento Intelbras Bio-T -->
-    <section class="bg-slate-800 p-5 rounded-lg border border-slate-700 shadow">
-      <h2 class="text-lg font-semibold text-slate-200 mb-4">2. Cadastrar Ponto de Acesso (Intelbras Bio-T)</h2>
-      
-      <form id="form-cadastro" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Nome do Equipamento</label>
-          <input type="text" id="nome" required placeholder="Ex: Catraca Principal" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
-        </div>
+  <label>Senha:</label>
+  <input type="password" id="senhaBioT" placeholder="Sua senha do Bio-T">
 
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Ponte (ESP32) do Local</label>
-          <select id="esp32_bridge_id" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
-            <option value="">Selecione um ESP32...</option>
-          </select>
-        </div>
+  <button onclick="enviarComandoTeste()">Testar Conexão (Digest Auth)</button>
 
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">IP Local do Bio-T</label>
-          <input type="text" id="ip_local" required placeholder="192.168.1.50" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
-        </div>
+  <label>Status da Execução:</label>
+  <div id="log">Aguardando comando...</div>
+</div>
 
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Usuário Admin</label>
-          <input type="text" id="usuario_admin" value="admin" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
-        </div>
+<script>
+  const SUPABASE_URL = "https://hvaibexymmbuvvuzjzld.supabase.co/rest/v1";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWliZXh5bW1idXZ2dXpqemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTYxMTAsImV4cCI6MjEwNDUzMjExMH0.s6dow6xW_VmiTL4Qwa4vRbh154OaMx3QZlhhEWrv-P8";
 
-        <div class="md:col-span-2">
-          <label class="block text-xs font-medium text-slate-400 mb-1">Senha Admin do Bio-T</label>
-          <input type="password" id="senha_admin" required placeholder="Senha de acesso da API" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500" />
-        </div>
+  async function enviarComandoTeste() {
+    const ip = document.getElementById('ipBioT').value;
+    const usuario = document.getElementById('usuarioBioT').value;
+    const senha = document.getElementById('senhaBioT').value;
+    const log = document.getElementById('log');
 
-        <div class="md:col-span-2">
-          <button type="submit" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-medium py-2 rounded text-sm transition">
-            Salvar Equipamento no Supabase
-          </button>
-        </div>
-      </form>
-    </section>
-
-    <!-- Seção 3: Dispositivos Cadastrados e Ações -->
-    <section class="bg-slate-800 p-5 rounded-lg border border-slate-700 shadow">
-      <h2 class="text-lg font-semibold text-slate-200 mb-4">3. Dispositivos e Testes de Conexão</h2>
-      <div id="lista-pontos" class="space-y-3">
-        <p class="text-slate-500 text-sm">Carregando lista de dispositivos...</p>
-      </div>
-    </section>
-  </div>
-
-  <!-- Script da Aplicação Web -->
-  <script>
-    // Configurações do Supabase
-    const SUPABASE_URL = 'https://hvaibexymmbuvvuzjzld.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2YWliZXh5bW1idXZ2dXpqemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTYxMTAsImV4cCI6MjEwNDUzMjExMH0.s6dow6xW_VmiTL4Qwa4vRbh154OaMx3QZlhhEWrv-P8';
-
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    // Carregar os ESP32 cadastrados
-    async function carregarESP32() {
-      const { data, error } = await supabase.from('esp32_bridges').select('*');
-      const container = document.getElementById('lista-esp32');
-      const select = document.getElementById('esp32_bridge_id');
-
-      if (error || !data.length) {
-        container.innerHTML = `<p class="text-rose-400 text-sm col-span-2">Nenhum ESP32 registrado ainda.</p>`;
-        return;
-      }
-
-      container.innerHTML = '';
-      select.innerHTML = '<option value="">Selecione um ESP32...</option>';
-
-      data.forEach(esp => {
-        container.innerHTML += `
-          <div class="bg-slate-900 p-3 rounded border border-slate-700 text-xs space-y-1">
-            <div class="flex justify-between items-center">
-              <span class="font-bold text-sky-400">${esp.nome || 'ESP32 Gateway'}</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${esp.status === 'ONLINE' ? 'bg-emerald-900 text-emerald-300' : 'bg-rose-900 text-rose-300'}">${esp.status}</span>
-            </div>
-            <p class="text-slate-400"><strong>IP Local:</strong> ${esp.ip_local}</p>
-            <p class="text-slate-400"><strong>MAC:</strong> ${esp.mac_address}</p>
-          </div>
-        `;
-
-        select.innerHTML += `<option value="${esp.id}">${esp.nome} (${esp.ip_local})</option>`;
-      });
+    if (!ip || !senha) {
+      alert("Por favor, preencha o IP e a Senha do Bio-T.");
+      return;
     }
 
-    // Carregar Pontos de Acesso
-    async function carregarPontosAcesso() {
-      const { data, error } = await supabase.from('pontos_acesso').select('*');
-      const container = document.getElementById('lista-pontos');
+    log.innerText = "[1/3] Enviando comando para a fila do Supabase...";
 
-      if (error || !data.length) {
-        container.innerHTML = `<p class="text-slate-500 text-sm">Nenhum ponto de acesso cadastrado.</p>`;
-        return;
-      }
-
-      container.innerHTML = '';
-      data.forEach(ponto => {
-        container.innerHTML += `
-          <div class="bg-slate-900 p-4 rounded border border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-            <div>
-              <h3 class="font-bold text-slate-200 text-sm">${ponto.nome}</h3>
-              <p class="text-xs text-slate-400">IP: ${ponto.ip_local} | Modelo: ${ponto.modelo}</p>
-            </div>
-            <div class="flex items-center gap-3 w-full md:w-auto">
-              <button onclick="testarConexao('${ponto.id}', '${ponto.ip_local}')" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3 py-1.5 rounded transition">
-                Testar Conexão
-              </button>
-            </div>
-          </div>
-        `;
+    // 1. Insere o comando na tabela 'fila_comandos'
+    try {
+      const response = await fetch(`${SUPABASE_URL}/fila_comandos`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Prefer": "return=representation"
+        },
+        body: JSON.stringify({
+          comando: "TESTAR_CONEXAO",
+          payload: { ip, usuario, senha }
+        })
       });
-    }
 
-    // Cadastrar Novo Ponto de Acesso
-    document.getElementById('form-cadastro').addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const novoPonto = {
-        nome: document.getElementById('nome').value,
-        esp32_bridge_id: document.getElementById('esp32_bridge_id').value,
-        ip_local: document.getElementById('ip_local').value,
-        usuario_admin: document.getElementById('usuario_admin').value,
-        senha_admin: document.getElementById('senha_admin').value
-      };
-
-      const { error } = await supabase.from('pontos_acesso').insert([novoPonto]);
-
-      if (error) {
-        alert('Erro ao salvar: ' + error.message);
-      } else {
-        alert('Dispositivo cadastrado com sucesso!');
-        document.getElementById('form-cadastro').reset();
-        carregarPontosAcesso();
-      }
-    });
-
-    // Disparar Comando de Teste na Fila e Ouvir Resposta em Tempo Real (Realtime)
-    async function testarConexao(pontoId, ipLocal) {
-      alert(`Enviando ordem de teste para o ESP32 verificar o IP ${ipLocal}...`);
-
-      const { data, error } = await supabase
-        .from('fila_comandos')
-        .insert([{ comando: 'TESTAR_CONEXAO', payload: { ponto_id: pontoId, ip: ipLocal } }])
-        .select();
-
-      if (error) {
-        alert('Erro ao disparar comando: ' + error.message);
-        return;
-      }
-
+      const data = await response.json();
       const comandoId = data[0].id;
+      
+      log.innerText = `[2/3] Comando criado (ID: ${comandoId}). Aguardando ESP32 processar...`;
 
-      // Escutar a resposta do ESP32 ao vivo usando a publicação do Supabase Realtime
-      const canal = supabase
-        .channel('mudanca_comando')
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'fila_comandos', filter: `id=eq.${comandoId}` },
-          (payload) => {
-            const status = payload.new.status;
-            const resposta = payload.new.resposta;
+      // 2. Faz polling para aguardar a resposta do ESP32
+      aguardarRespostaESP32(comandoId);
 
-            if (status === 'CONCLUIDO') {
-              alert(`✅ RESPOSTA DO ESP32:\n\n${resposta}`);
-              supabase.removeChannel(canal);
-            } else if (status === 'ERRO') {
-              alert(`❌ ERRO NO TESTE:\n\n${resposta}`);
-              supabase.removeChannel(canal);
-            }
-          }
-        )
-        .subscribe();
+    } catch (err) {
+      log.innerText = "[ERRO] Falha ao enviar para o Supabase: " + err.message;
     }
+  }
 
-    // Inicialização
-    carregarESP32();
-    carregarPontosAcesso();
-  </script>
+  function aguardarRespostaESP32(comandoId) {
+    const log = document.getElementById('log');
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/fila_comandos?id=eq.${comandoId}`, {
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": `Bearer ${SUPABASE_KEY}`
+          }
+        });
+        
+        const data = await res.json();
+        const cmd = data[0];
+
+        if (cmd.status === "PROCESSANDO") {
+          log.innerText = "[3/3] ESP32 capturou o comando. Calculando Digest Auth MD5 no Bio-T...";
+        } else if (cmd.status === "CONCLUIDO") {
+          clearInterval(interval);
+          log.innerText = "SUCCESS! RESPOSTA DO BIO-T:\n" + cmd.resposta;
+        } else if (cmd.status === "ERRO") {
+          clearInterval(interval);
+          log.innerText = "ERRO NA EXECUÇÃO:\n" + cmd.resposta;
+        }
+      } catch (err) {
+        clearInterval(interval);
+        log.innerText = "[ERRO] Falha ao checar status: " + err.message;
+      }
+    }, 1500); // Checa o status a cada 1.5s
+  }
+</script>
+
 </body>
 </html>
