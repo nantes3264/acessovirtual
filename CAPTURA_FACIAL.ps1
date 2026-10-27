@@ -1,4 +1,5 @@
 ﻿# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
+# v3.5 (27/10/2026): aba "Usuarios" no Buscador (quantidade, busca por cartao decimal/hex com bits, por UserID, lista).
 # v3.4 (27/10/2026): botao "Atualizar" passa a se chamar "Verificar novas versoes" (versao de teste da atualizacao pelo site).
 # v3 (27/10/2026): botao "Buscar IP..." (acha os equipamentos, modelo, se e Bio-T, troca de IP, estado e comandos de porta)
 #                  e a captura tenta de novo quando o facial responde 400 (captura anterior ainda ativa nele).
@@ -51,7 +52,7 @@ function LogExcecao($contexto, $ex) {
     Log $m 'ERRO'
 }
 IniciarLog
-Log '=== Captura Facial - versao 3.4 ==='
+Log '=== Captura Facial - versao 3.5 ==='
 Log ("Windows: {0} | 64bit: {1}" -f [Environment]::OSVersion.VersionString, [Environment]::Is64BitOperatingSystem)
 Log ("PowerShell: {0} | CLR: {1}" -f $PSVersionTable.PSVersion, $PSVersionTable.CLRVersion)
 Log ("Usuario: {0}\{1} | Computador: {2}" -f $env:USERDOMAIN, $env:USERNAME, $env:COMPUTERNAME)
@@ -796,7 +797,8 @@ function Identificar($ip, $porta, $usuario, $senha) {
     # --- abas do equipamento escolhido
     $tabs = New-Object System.Windows.Forms.TabControl; $tabs.Location = New-Object System.Drawing.Point(12, 314); $tabs.Size = New-Object System.Drawing.Size(1060, 395); $tabs.Anchor = 'Top,Left,Right,Bottom'
     $tRede = New-Object System.Windows.Forms.TabPage 'Rede (trocar IP)'; $tPorta = New-Object System.Windows.Forms.TabPage 'Porta'; $tEq = New-Object System.Windows.Forms.TabPage 'Equipamento'
-    $tabs.TabPages.AddRange(@($tRede, $tPorta, $tEq)); $tabs.Enabled = $false; $w.Controls.Add($tabs)
+    $tUsu = New-Object System.Windows.Forms.TabPage 'Usuários'
+    $tabs.TabPages.AddRange(@($tRede, $tPorta, $tUsu, $tEq)); $tabs.Enabled = $false; $w.Controls.Add($tabs)
 
     # Rede
     BL 'IP' 12 18 $tRede | Out-Null;            $rIp = BT 140 14 140 '' $tRede
@@ -1199,6 +1201,142 @@ if ($D.Ini) {
             Log ("Buscador: GRAVAR porta {0}: {1}" -f (Atual).IP, ($desc -join ', '))
             if (Comando ('/cgi-bin/configManager.cgi?action=setConfig&' + ($q -join '&')) 'Gravar porta') { [void](LerPorta) }
         } catch { MostrarErro 'Buscador: gravar porta' $_.Exception }
+    })
+
+    # ---- USUARIOS (v3.5) - portal-integracao.intelbras.com.br/linha-de-faciais:
+    #   quantidade: recordFinder.cgi?action=getQuerySize&name=AccessUserInfo | AccessCardInfo
+    #   por cartao: AccessCard.cgi?action=list&CardNoList[0]=12EA3004 (guardado em HEX maiusculo; decimal se AccessControl[0].CardStoreFormat=1)
+    #   por UserID: AccessUser.cgi?action=list&UserIDList[0]=5      todos: recordFinder.cgi?action=doSeekFind&name=AccessControlCard&count=1024&offset=0
+    $btUCont = BB 'Contar usuários e cartões' 12 10 210 $tUsu
+    $uCont = BL '' 232 16 $tUsu; $uCont.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    BL 'Cartão' 12 54 $tUsu | Out-Null; $uCartao = BT 70 50 170 '' $tUsu
+    $uForm = Combo 250 50 115 @('Decimal', 'Hexadecimal') $tUsu; $uForm.SelectedIndex = 0
+    $bitsOp = @(@('Automático (como digitado)', 0), @('24 bits - Wiegand 26 (6 díg. hex)', 24), @('32 bits - Wiegand 32/34 (8 díg. hex)', 32), @('40 bits (10 díg. hex)', 40), @('56 bits - 7 bytes (14 díg. hex)', 56), @('64 bits (16 díg. hex)', 64))
+    $uBits = Combo 375 50 255 ($bitsOp | ForEach-Object { $_[0] }) $tUsu; $uBits.SelectedIndex = 2
+    $btUCartao = BB 'BUSCAR CARTÃO' 640 48 150 $tUsu; $btUCartao.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $uPrev = BL 'Digite o número do cartão (decimal, hexadecimal ou Wiegand 26 "facility,cartão").' 12 84 $tUsu; $uPrev.ForeColor = [System.Drawing.Color]::DarkBlue
+    BL 'UserID' 12 116 $tUsu | Out-Null; $uId = BT 70 112 100 '' $tUsu
+    $btUId = BB 'Buscar UserID' 180 110 130 $tUsu
+    $btUTodos = BB 'Listar todos' 320 110 130 $tUsu
+    $uFmt = BL '' 465 116 $tUsu; $uFmt.ForeColor = [System.Drawing.Color]::DimGray
+    $uLv = New-Object System.Windows.Forms.ListView; $uLv.View = 'Details'; $uLv.FullRowSelect = $true; $uLv.GridLines = $true; $uLv.HideSelection = $false
+    $uLv.Location = New-Object System.Drawing.Point(12, 146); $uLv.Size = New-Object System.Drawing.Size(1020, 210); $uLv.Anchor = 'Top,Left,Right,Bottom'
+    foreach ($c in @(@('UserID', 80), @('Nome', 200), @('Cartão (CardNo)', 140), @('Cartão em decimal', 130), @('Status', 90), @('Tipo', 70), @('Válido de', 140), @('Válido até', 140))) { [void]$uLv.Columns.Add($c[0], $c[1]) }
+    $tUsu.Controls.Add($uLv)
+
+    # converte o que foi digitado para o CardNo do equipamento (hex maiusculo), completando ate os bits escolhidos
+    function CartaoParaHex {
+        $t = $uCartao.Text.Trim(); if (-not $t) { throw 'Digite o número do cartão.' }
+        $bits = [int]$bitsOp[[math]::Max(0, $uBits.SelectedIndex)][1]; $obs = ''
+        if ($t -match '^(\d{1,3})\s*[,;:/]\s*(\d{1,5})$') {
+            # Wiegand 26 impresso como facility,cartao: 8 bits de facility + 16 bits de cartao = 24 bits
+            if ([int]$Matches[1] -gt 255 -or [int]$Matches[2] -gt 65535) { throw 'Wiegand 26: facility até 255 e cartão até 65535.' }
+            $v = ([uint64]$Matches[1] * 65536) + [uint64]$Matches[2]; if ($bits -eq 0) { $bits = 24 }; $obs = " (Wiegand 26: facility $($Matches[1]), cartão $($Matches[2]))"
+        } elseif ($uForm.SelectedIndex -eq 0) {
+            if ($t -notmatch '^\d+$') { throw 'Número decimal inválido (só dígitos). Para hexadecimal, escolha "Hexadecimal".' }
+            try { $v = [uint64]$t } catch { throw 'Número grande demais (mais de 64 bits).' }
+        } else {
+            $h = ($t -replace '^0[xX]', '') -replace '[\s:-]', ''
+            if ($h -notmatch '^[0-9A-Fa-f]+$') { throw 'Hexadecimal inválido (use 0-9 e A-F).' }
+            if ($h.Length -gt 16) { throw 'Hexadecimal grande demais (mais de 64 bits).' }
+            $v = [Convert]::ToUInt64($h, 16)
+        }
+        $hex = $v.ToString('X'); $nb = 0; $x = $v; while ($x -gt 0) { $nb++; $x = $x -shr 1 }
+        $hexP = $hex
+        if ($bits -gt 0) {
+            if ($nb -gt $bits) { throw "O número tem $nb bits: não cabe em $bits bits. Escolha mais bits." }
+            $hexP = $hex.PadLeft([int]($bits / 4), '0')
+        }
+        return @{ Hex = $hexP; HexCurto = $hex; Dec = $v.ToString(); Bits = $bits; NBits = $nb; Obs = $obs }
+    }
+    function PrevCartao {
+        try { $c = CartaoParaHex; $uPrev.ForeColor = [System.Drawing.Color]::DarkBlue
+            $uPrev.Text = "Será buscado:  HEX $($c.Hex)   |   decimal $($c.Dec)   |   $(if ($c.Bits) { "$($c.Bits) bits" } else { 'sem completar' }) (o número usa $($c.NBits) bits)$($c.Obs)" }
+        catch { $uPrev.ForeColor = [System.Drawing.Color]::DarkRed; $uPrev.Text = $_.Exception.Message }
+    }
+    $uCartao.Add_TextChanged({ PrevCartao }); $uForm.Add_SelectedIndexChanged({ PrevCartao }); $uBits.Add_SelectedIndexChanged({ PrevCartao })
+    function Registros($texto, $prefixo) {
+        $r = @{}
+        foreach ($l in (($texto + '') -split "`n")) { if ($l -match ('^' + $prefixo + '\[(\d+)\]\.([^=]+)=(.*)$')) { $i = [int]$Matches[1]; if (-not $r.ContainsKey($i)) { $r[$i] = @{} }; $r[$i][$Matches[2].Trim()] = $Matches[3].Trim() } }
+        return @($r.Keys | Sort-Object | ForEach-Object { $r[$_] })
+    }
+    function HexParaDec($h) { try { if ($h -match '^[0-9A-Fa-f]{1,16}$') { return ([Convert]::ToUInt64($h, 16)).ToString() } } catch {}; return '' }
+    function MostrarUsuarios($lista, $titulo) {
+        $uLv.BeginUpdate()
+        try {
+            $uLv.Items.Clear()
+            foreach ($u in $lista) {
+                $cn = [string]$u['CardNo']; $st = [string]$(if ($u.ContainsKey('CardStatus')) { $u['CardStatus'] } else { $u['UserStatus'] })
+                $stT = switch ($st) { '0' { 'Normal' } '1' { 'Cancelado' } '2' { 'Congelado' } default { $st } }
+                $nome = [string]$(if ($u['UserName']) { $u['UserName'] } else { $u['CardName'] })
+                $de = [string]$(if ($u['ValidFrom']) { $u['ValidFrom'] } else { $u['ValidDateStart'] }); $ate = [string]$(if ($u['ValidTo']) { $u['ValidTo'] } else { $u['ValidDateEnd'] })
+                $it = New-Object System.Windows.Forms.ListViewItem([string]$u['UserID'])
+                foreach ($v in @($nome, $cn, (HexParaDec $cn), $stT, [string]$u['UserType'], $de, $ate)) { [void]$it.SubItems.Add([string]$v) }
+                [void]$uLv.Items.Add($it)
+            }
+        } finally { $uLv.EndUpdate() }
+        $lbSt.Text = "$titulo $($lista.Count) usuário(s)."
+    }
+    function LerFormatoCartao {
+        $r = ReqUI '/cgi-bin/configManager.cgi?action=getConfig&name=AccessControl' 5000
+        $fc = [string](Tabela $r.Texto)['table.AccessControl[0].CardStoreFormat']
+        $uFmt.Text = 'O equipamento guarda cartões em: ' + $(if ($fc -eq '1') { 'DECIMAL' } elseif ($fc -eq '0') { 'HEXADECIMAL' } else { 'hexadecimal (padrão)' })
+        return $fc
+    }
+    $btUCont.Add_Click({
+        try {
+            $a = ReqUI '/cgi-bin/recordFinder.cgi?action=getQuerySize&name=AccessUserInfo' 6000
+            $c = ReqUI '/cgi-bin/recordFinder.cgi?action=getQuerySize&name=AccessCardInfo' 6000
+            $nu = [string](Tabela $a.Texto)['count']; $nc = [string](Tabela $c.Texto)['count']
+            $uCont.Text = "Usuários: $(if ($nu) { $nu } else { '?' })     Cartões: $(if ($nc) { $nc } else { '?' })"
+            Log "Buscador: $((Atual).IP) tem $nu usuario(s) e $nc cartao(oes)"
+        } catch { MostrarErro 'Buscador: contar usuários' $_.Exception }
+    })
+    $btUCartao.Add_Click({
+        try {
+            $c = CartaoParaHex; PrevCartao
+            $fmt = LerFormatoCartao
+            # manda as formas possiveis numa chamada so: hex completado, hex sem zeros a esquerda e (se o equipamento usa decimal) o decimal
+            $vars = @($c.Hex); if ($c.HexCurto -ne $c.Hex) { $vars += $c.HexCurto }; if ($fmt -eq '1') { $vars = @($c.Dec) + $vars }
+            $q = '/cgi-bin/AccessCard.cgi?action=list'; for ($k = 0; $k -lt $vars.Count; $k++) { $q += "&CardNoList[$k]=$($vars[$k])" }
+            Log ("Buscador: buscar cartao {0} -> {1}" -f $uCartao.Text.Trim(), ($vars -join ', '))
+            $r = ReqUI $q 8000
+            $l = @(Registros $r.Texto 'Users')
+            foreach ($u in $l) { if (-not $u['CardNo']) { $u['CardNo'] = $vars[0] } }
+            MostrarUsuarios $l "Cartão $($vars -join ' / '):"
+            if (-not $l.Count) { $lbSt.Text = "Nenhum usuário com o cartão $($vars -join ' / '). Confira o formato (decimal/hex) e os bits." }
+        } catch { MostrarErro 'Buscador: buscar cartão' $_.Exception }
+    })
+    $btUId.Add_Click({
+        try {
+            $id = $uId.Text.Trim(); if (-not $id) { throw 'Digite o UserID.' }
+            $r = ReqUI ("/cgi-bin/AccessUser.cgi?action=list&UserIDList[0]={0}" -f [Uri]::EscapeDataString($id)) 8000
+            $l = @(Registros $r.Texto 'Users')
+            # cartoes desse usuario (busca em 2 passos da documentacao)
+            if ($l.Count) {
+                try {
+                    $s1 = ReqUI ("/cgi-bin/AccessCard.cgi?action=startFind&Condition.UserID={0}" -f [Uri]::EscapeDataString($id)) 6000
+                    $tok = if ($s1.Texto -match '"Token"\s*:\s*(\d+)') { $Matches[1] } else { $null }
+                    if ($tok) { $s2 = ReqUI "/cgi-bin/AccessCard.cgi?action=doFind&Token=$tok&Offset=0&Count=200" 6000
+                        $cs = @([regex]::Matches($s2.Texto, '"CardNo"\s*:\s*"([^"]*)"') | ForEach-Object { $_.Groups[1].Value })
+                        if ($cs.Count) { $l[0]['CardNo'] = ($cs -join ', ') } }
+                } catch { Log ("Buscador: cartoes do UserID {0}: {1}" -f $id, $_.Exception.Message) 'AVISO' }
+            }
+            MostrarUsuarios $l "UserID ${id}:"
+            if (-not $l.Count) { $lbSt.Text = "Nenhum usuário com o UserID $id." }
+        } catch { MostrarErro 'Buscador: buscar UserID' $_.Exception }
+    })
+    $btUTodos.Add_Click({
+        try {
+            $todos = @(); $off = 0
+            do {
+                $lbSt.Text = "Lendo usuários... $($todos.Count)"; [System.Windows.Forms.Application]::DoEvents()
+                $r = ReqUI "/cgi-bin/recordFinder.cgi?action=doSeekFind&name=AccessControlCard&count=1024&offset=$off" 20000
+                $pg = @(Registros $r.Texto 'records'); $todos += $pg; $off += 1024
+            } while ($pg.Count -eq 1024 -and $off -lt 20480)
+            MostrarUsuarios $todos 'Lista:'
+            Log "Buscador: listou $($todos.Count) usuario(s) de $((Atual).IP)"
+        } catch { MostrarErro 'Buscador: listar usuários' $_.Exception }
     })
 
     # ---- Equipamento
