@@ -1,4 +1,4 @@
-﻿# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
+# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
 # v3.5 (27/10/2026): aba "Usuarios" no Buscador (quantidade, busca por cartao decimal/hex com bits, por UserID, lista).
 # v3.4 (27/10/2026): botao "Atualizar" passa a se chamar "Verificar novas versoes" (versao de teste da atualizacao pelo site).
 # v3 (27/10/2026): botao "Buscar IP..." (acha os equipamentos, modelo, se e Bio-T, troca de IP, estado e comandos de porta)
@@ -52,7 +52,7 @@ function LogExcecao($contexto, $ex) {
     Log $m 'ERRO'
 }
 IniciarLog
-Log '=== Captura Facial - versao 3.5 ==='
+Log '=== Captura Facial - versao 6.0 ==='
 Log ("Windows: {0} | 64bit: {1}" -f [Environment]::OSVersion.VersionString, [Environment]::Is64BitOperatingSystem)
 Log ("PowerShell: {0} | CLR: {1}" -f $PSVersionTable.PSVersion, $PSVersionTable.CLRVersion)
 Log ("Usuario: {0}\{1} | Computador: {2}" -f $env:USERDOMAIN, $env:USERNAME, $env:COMPUTERNAME)
@@ -253,6 +253,7 @@ $btnAbrir = NovoBotao 'Abrir pasta das fotos' 410 585 160
 $btnPasta = NovoBotao 'Trocar pasta...' 580 585 120
 $btnLog   = NovoBotao 'Abrir LOG' 710 585 100
 $btnAtu   = NovoBotao 'Verificar novas versões' 815 585 150; $btnAtu.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+$lblVersao = NovoLabel 'Versão 6.0' 815 617; $lblVersao.ForeColor = [System.Drawing.Color]::DimGray; $lblVersao.Anchor = 'Left,Bottom'
 $lblStatus = NovoLabel 'Informe o IP, usuário e senha do facial e clique em Conectar.' 12 640; $lblStatus.Anchor = 'Left,Bottom'; $lblStatus.AutoSize = $false; $lblStatus.Width = 930; $lblStatus.Height = 24
 
 $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 50
@@ -773,6 +774,30 @@ function Identificar($ip, $porta, $usuario, $senha) {
     function BB($t, $x, $y, $wd, $pai) { $b = New-Object System.Windows.Forms.Button; $b.Text = $t; $b.Location = New-Object System.Drawing.Point($x, $y); $b.Size = New-Object System.Drawing.Size($wd, 30); $pai.Controls.Add($b); return $b }
     function BC($t, $x, $y, $pai) { $c = New-Object System.Windows.Forms.CheckBox; $c.Text = $t; $c.Location = New-Object System.Drawing.Point($x, $y); $c.AutoSize = $true; $pai.Controls.Add($c); return $c }
     function Combo($x, $y, $wd, $itens, $pai) { $c = New-Object System.Windows.Forms.ComboBox; $c.DropDownStyle = 'DropDownList'; $c.Location = New-Object System.Drawing.Point($x, $y); $c.Width = $wd; foreach ($i in $itens) { [void]$c.Items.Add($i) }; $pai.Controls.Add($c); return $c }
+    # "*" de ajuda: botaozinho que abre uma janelinha explicando a opcao
+    function Ast($x, $y, $pai, $acao) {
+        $b = New-Object System.Windows.Forms.Button; $b.Text = '*'; $b.Location = New-Object System.Drawing.Point($x, $y); $b.Size = New-Object System.Drawing.Size(26, 26)
+        $b.FlatStyle = 'Flat'; $b.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold); $b.ForeColor = [System.Drawing.Color]::DarkBlue
+        $b.Add_Click($acao); $pai.Controls.Add($b); return $b
+    }
+    function AjudaTexto($titulo, $texto) {
+        $ff = New-Object System.Windows.Forms.Form; $ff.Text = $titulo; $ff.Size = New-Object System.Drawing.Size(560, 360); $ff.StartPosition = 'CenterParent'; $ff.FormBorderStyle = 'FixedDialog'; $ff.MinimizeBox = $false; $ff.MaximizeBox = $false; $ff.ShowInTaskbar = $false
+        $tb = New-Object System.Windows.Forms.TextBox; $tb.Multiline = $true; $tb.ReadOnly = $true; $tb.ScrollBars = 'Vertical'; $tb.Dock = 'Fill'; $tb.Font = New-Object System.Drawing.Font('Segoe UI', 10); $tb.Text = $texto; $tb.BorderStyle = 'None'; $tb.BackColor = [System.Drawing.Color]::White
+        $pnl = New-Object System.Windows.Forms.Panel; $pnl.Dock = 'Bottom'; $pnl.Height = 46
+        $bx = New-Object System.Windows.Forms.Button; $bx.Text = 'X  Fechar'; $bx.Size = New-Object System.Drawing.Size(120, 32); $bx.Anchor = 'Right'; $bx.Location = New-Object System.Drawing.Point(420, 7); $bx.Add_Click({ $ff.Close() }.GetNewClosure())
+        $pnl.Controls.Add($bx); $ff.Controls.Add($tb); $ff.Controls.Add($pnl); $ff.AcceptButton = $bx; [void]$ff.ShowDialog($w)
+    }
+    function AjudaImagem($titulo, $texto, $nomeArq) {
+        $ff = New-Object System.Windows.Forms.Form; $ff.Text = $titulo; $ff.Size = New-Object System.Drawing.Size(760, 680); $ff.StartPosition = 'CenterParent'; $ff.MinimizeBox = $false; $ff.ShowInTaskbar = $false
+        $lbl = New-Object System.Windows.Forms.Label; $lbl.Dock = 'Top'; $lbl.Height = 150; $lbl.Text = $texto; $lbl.Font = New-Object System.Drawing.Font('Segoe UI', 10); $lbl.Padding = New-Object System.Windows.Forms.Padding(10)
+        $pic = New-Object System.Windows.Forms.PictureBox; $pic.Dock = 'Fill'; $pic.SizeMode = 'Zoom'; $pic.BackColor = [System.Drawing.Color]::White
+        $cam = Join-Path (Join-Path (Split-Path $PSCommandPath) 'imagens') $nomeArq
+        if (Test-Path -LiteralPath $cam) { try { $pic.Image = [System.Drawing.Image]::FromFile($cam) } catch { $lbl.Text += "`r`n`r`n(Nao consegui abrir a figura: $($_.Exception.Message))" } }
+        else { $lbl.Text += "`r`n`r`n(A figura ainda nao esta instalada. Coloque imagens\$nomeArq ao lado do CAPTURA_FACIAL.ps1.)" }
+        $pnl = New-Object System.Windows.Forms.Panel; $pnl.Dock = 'Bottom'; $pnl.Height = 46
+        $bx = New-Object System.Windows.Forms.Button; $bx.Text = 'X  Fechar'; $bx.Size = New-Object System.Drawing.Size(120, 32); $bx.Anchor = 'Right'; $bx.Location = New-Object System.Drawing.Point(620, 7); $bx.Add_Click({ $ff.Close() }.GetNewClosure())
+        $pnl.Controls.Add($bx); $ff.Controls.Add($pic); $ff.Controls.Add($lbl); $ff.Controls.Add($pnl); $ff.AcceptButton = $bx; [void]$ff.ShowDialog($w)
+    }
 
     # --- busca
     $faixas = @(FaixasDoPc); $fx = if ($faixas.Count) { $faixas[0] } else { '192.168.1.1-192.168.1.254' }
@@ -817,23 +842,48 @@ function Identificar($ip, $porta, $usuario, $senha) {
     $rAviso = BL 'APLICAR envia IP, máscara, gateway, DNS e porta e deixa o DHCP como está na caixinha. FIXAR IP faz o mesmo e DESLIGA o DHCP (IP fixo). O equipamento reinicia a rede (até 90 s); este PC precisa alcançar a faixa nova.' 12 300 $tRede
     $rAviso.AutoSize = $false; $rAviso.Size = New-Object System.Drawing.Size(1000, 40); $rAviso.ForeColor = [System.Drawing.Color]::DarkRed
 
+    # textos das janelinhas de ajuda (*)
+$script:TxtSensor = @'
+O sensor de porta avisa o equipamento se a porta esta aberta ou fechada (ele tem um ima na folha da porta e um contato no batente).
+
+NA (Normal Aberto): com a porta FECHADA o contato fica ABERTO (sem continuidade).
+NF (Normal Fechado): com a porta FECHADA o contato fica FECHADO (com continuidade).
+
+Como testar: ponha o multimetro em continuidade (modo "bip") nos dois fios do sensor e feche/abra a porta (aproxime/afaste o ima). Se apita com a porta fechada = NF; se apita com a porta aberta = NA. Escolha aqui o tipo igual ao do seu sensor.
+'@
+$script:TxtZAberta = @'
+A "zona de tempo" (horario programado) e um periodo da semana cadastrado dentro do equipamento (ex.: seg a sex, das 8h as 18h).
+
+"Sempre aberta" liga a porta a uma dessas zonas: durante o horario escolhido a porta fica DESTRAVADA sozinha (acesso livre, sem precisar de cartao/senha/face). Fora do horario ela volta ao normal.
+
+Digite o ID (numero) da zona de tempo ja cadastrada no equipamento. Use 255 para nao usar nenhuma (funcao desligada).
+'@
+$script:TxtZFechada = @'
+Liga a porta a uma zona de tempo (horario programado da semana). Durante esse horario a porta fica TRAVADA e NAO abre nem com cartao/senha/face comuns - util para feriados, madrugada, dias de folga, etc.
+
+Digite o ID (numero) da zona de tempo cadastrada no equipamento. Use 255 para nao usar nenhuma (funcao desligada).
+'@
+
     # Porta
     $pSt = BL 'Status: -' 12 14 $tPorta; $pSt.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold)
     $btPAbrir = BB 'ABRIR PORTA' 12 50 150 $tPorta; $btPAbrir.BackColor = [System.Drawing.Color]::FromArgb(200, 240, 210)
     $btPFechar = BB 'FECHAR PORTA' 172 50 150 $tPorta
     $btPStatus = BB 'Ler status' 332 50 110 $tPorta
-    $pAuto = BC 'Atualizar status a cada 1 s' 452 56 $tPorta
+    $pAuto = BC 'Atualizar status automaticamente' 452 56 $tPorta
     BL 'Canal' 680 56 $tPorta | Out-Null; $pCanal = Combo 725 52 60 @('1', '2') $tPorta; $pCanal.SelectedIndex = 0
     BL 'Estado da porta' 12 100 $tPorta | Out-Null;  $pEstado = Combo 230 96 220 @('Normal', 'Sempre aberta (OpenAlways)', 'Sempre fechada (CloseAlways)') $tPorta
-    BL 'Tempo de abertura (ms, 250 a 20000)' 12 134 $tPorta | Out-Null; $pTempo = BT 290 130 80 '' $tPorta
+    BL 'Tempo de abertura (segundos, 0,25 a 20)' 12 134 $tPorta | Out-Null; $pTempo = BT 290 130 80 '' $tPorta
     $pSensor = BC 'Sensor de porta ligado' 12 166 $tPorta
-    BL 'Tipo do sensor' 230 166 $tPorta | Out-Null;  $pTipoSensor = Combo 330 162 200 @('0 - Normal aberto (NA)', '1 - Normal fechado (NF)') $tPorta
+    BL 'Tipo do sensor' 230 166 $tPorta | Out-Null;  $pTipoSensor = Combo 330 162 190 @('0 - Normal aberto (NA)', '1 - Normal fechado (NF)') $tPorta
+    Ast 524 164 $tPorta { AjudaImagem 'Tipo do sensor (NA / NF) - como testar' $script:TxtSensor 'sensor_na_nf.png' } | Out-Null
     BL 'Atraso do sensor / alarme porta aberta (s)' 12 198 $tPorta | Out-Null; $pAtraso = BT 290 194 60 '' $tPorta
     $pBotao = BC 'Botão de saída ligado' 12 228 $tPorta
     $pRele = BC 'Status do relé (firmware 20260416+)' 230 228 $tPorta
     BL 'Nome da porta' 12 262 $tPorta | Out-Null;    $pNome = BT 230 258 220 '' $tPorta
-    BL 'Zona de tempo sempre aberta (ID, 255 = nenhuma)' 480 100 $tPorta | Out-Null; $pZAberta = BT 800 96 60 '' $tPorta
-    BL 'Zona de tempo sempre fechada (ID, 255 = nenhuma)' 480 134 $tPorta | Out-Null; $pZFechada = BT 800 130 60 '' $tPorta
+    BL 'Zona de tempo sempre aberta' 480 100 $tPorta | Out-Null; $pZAberta = BT 680 96 55 '' $tPorta
+    Ast 740 98 $tPorta { AjudaTexto 'Zona de tempo "sempre aberta"' $script:TxtZAberta } | Out-Null
+    BL 'Zona de tempo sempre fechada' 480 134 $tPorta | Out-Null; $pZFechada = BT 680 130 55 '' $tPorta
+    Ast 740 132 $tPorta { AjudaTexto 'Zona de tempo "sempre fechada"' $script:TxtZFechada } | Out-Null
     $metodos = @('0 - Só senha', '1 - Só cartão', '2 - Senha ou cartão', '3 - Cartão e depois senha', '5 - Diferente por horário', '6 - Só digital', '7 - Senha, cartão ou digital',
         '10 - Cartão e digital', '11 - Vários usuários', '17 - Só face', '18 - Face e senha', '19 - Digital e senha', '20 - Digital e face', '21 - Cartão e face', '22 - Face ou senha',
         '23 - Digital ou senha', '24 - Digital ou face', '25 - Cartão ou face', '26 - Cartão ou digital', '27 - Digital, face e senha', '28 - Cartão, face e senha', '29 - Cartão, digital e senha',
@@ -850,7 +900,7 @@ function Identificar($ip, $porta, $usuario, $senha) {
     $btELer = BB 'Ler informações' 12 320 160 $tEq; $btELer.Anchor = 'Left,Bottom'
     $btEReb = BB 'Reiniciar equipamento' 182 320 190 $tEq; $btEReb.Anchor = 'Left,Bottom'
 
-    $tmP = New-Object System.Windows.Forms.Timer; $tmP.Interval = 1000
+    $tmP = New-Object System.Windows.Forms.Timer; $tmP.Interval = 500
     $sel = @{ D = $null; Rede = $null; Porta = $null }
     $script:SenhaPorIp = @{}
     $corOk = [System.Drawing.SystemColors]::Window; $corErro = [System.Drawing.Color]::FromArgb(255, 190, 190)
@@ -1024,16 +1074,19 @@ if ($D.Ini) {
     })
     # ---- PING: testa o equipamento selecionado 1 vez por segundo, sem precisar abrir o prompt
     $rPing = BC 'Testar ping (1 por segundo)' 760 84 $tRede
-    $rPingRes = BL 'Ping: -' 760 110 $tRede; $rPingRes.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold)
-    $rPingEst = BL '' 760 140 $tRede; $rPingEst.ForeColor = [System.Drawing.Color]::DimGray
+    $rPingRes = BL 'Ping: -' 760 110 $tRede; $rPingRes.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold); $rPingRes.Visible = $false
+    $rPingEst = BL '' 760 140 $tRede; $rPingEst.ForeColor = [System.Drawing.Color]::DimGray; $rPingEst.Visible = $false
+    $rPingLbl = BL 'Testar outro IP:' 760 172 $tRede; $rPingLbl.Visible = $false
+    $rPingIp = BT 870 168 150 '' $tRede; $rPingIp.Visible = $false
     $tmPing = New-Object System.Windows.Forms.Timer; $tmPing.Interval = 1000
     $script:PingT = $null; $script:PingIp = ''; $script:PingE = @{}
     function ZerarPing { $script:PingE = @{ Env = 0; Ok = 0; Min = [double]::MaxValue; Max = 0; Soma = 0 }; $rPingRes.Text = 'Ping: -'; $rPingRes.ForeColor = [System.Drawing.Color]::Black; $rPingEst.Text = '' }
     ZerarPing
     $tmPing.Add_Tick({
         try {
-            if (-not $sel.D) { return }
-            if ($script:PingIp -ne $sel.D.IP) { $script:PingIp = $sel.D.IP; $script:PingT = $null; ZerarPing }
+            $alvo = $rPingIp.Text.Trim()
+            if (-not $alvo) { $rPingRes.Text = 'Ping: digite um IP acima'; $rPingRes.ForeColor = [System.Drawing.Color]::Black; $rPingEst.Text = ''; $script:PingIp = ''; return }
+            if ($script:PingIp -ne $alvo) { $script:PingIp = $alvo; $script:PingT = $null; ZerarPing }
             $e = $script:PingE
             if ($script:PingT -and $script:PingT.T.IsCompleted) {
                 $e.Env++
@@ -1053,7 +1106,17 @@ if ($D.Ini) {
             if (-not $script:PingT) { $pg = New-Object System.Net.NetworkInformation.Ping; $script:PingT = @{ P = $pg; T = $pg.SendPingAsync($script:PingIp, 900) } }
         } catch { LogRep 'ping' ("Ping: erro {0}" -f $_.Exception.Message) 'AVISO' }
     })
-    $rPing.Add_CheckedChanged({ if ($rPing.Checked) { $script:PingIp = ''; $tmPing.Start() } else { $tmPing.Stop(); $script:PingT = $null } })
+    $rPing.Add_CheckedChanged({
+        if ($rPing.Checked) {
+            $rPingIp.Text = $(if ($sel.D) { $sel.D.IP } else { '' })
+            $rPingLbl.Visible = $true; $rPingIp.Visible = $true; $rPingRes.Visible = $true; $rPingEst.Visible = $true
+            $script:PingIp = ''; $tmPing.Start()
+        } else {
+            $tmPing.Stop(); $script:PingT = $null
+            $rPingLbl.Visible = $false; $rPingIp.Visible = $false; $rPingRes.Visible = $false; $rPingEst.Visible = $false
+            $rPingRes.Text = 'Ping: -'; $rPingEst.Text = ''
+        }
+    })
     $lv.Add_SelectedIndexChanged({
         if ($lv.SelectedItems.Count -eq 0) { return }
         $sel.D = $null; $rSenha.Text = [string]$script:SenhaPorIp[$lv.SelectedItems[0].Tag.IP]
@@ -1062,6 +1125,7 @@ if ($D.Ini) {
         $rInfo.Text = "Equipamento: $($d.Modelo)  |  série $($d.Serie)  |  MAC $($d.MAC)"
         $pSt.Text = 'Status: -'; $sel.Rede = $null; $sel.Porta = $null; $eTxt.Text = ''
         $lbSt.Text = "Escolhido: $($d.IP) - $($d.Modelo). Use 'Ler do equipamento' para trazer os dados atuais."
+        if ($tabs.SelectedTab -eq $tPorta) { $pAuto.Checked = $true; $tmP.Start() }
     })
     $btUsar.Add_Click({ $d = Atual; if ($d) { $txtIp.Text = $d.IP; $txtPorta.Text = $d.Porta; $u, $s = Cred; $txtUser.Text = $u; if ($s) { $txtSenha.Text = $s }; Log "Buscador: usar $($d.IP) na tela principal"; $w.Close() } })
 
@@ -1137,9 +1201,9 @@ if ($D.Ini) {
 
     # ---- Porta
     function Canal { return [int]$pCanal.SelectedItem }
-    function LerStatus {
+    function LerStatus($to = 4000) {
         $d = Atual; $u, $s = Cred
-        $r = ReqUI ("/cgi-bin/accessControl.cgi?action=getDoorStatus&channel={0}" -f (Canal)) 4000
+        $r = ReqUI ("/cgi-bin/accessControl.cgi?action=getDoorStatus&channel={0}" -f (Canal)) $to
         if ($r.Status -eq 200) {
             $v = (Tabela $r.Texto)['Info.status']
             $pt = switch ($v) { 'Open' { 'ABERTA' } 'Close' { 'FECHADA' } 'Break' { 'ARROMBADA' } default { $v } }
@@ -1157,7 +1221,9 @@ if ($D.Ini) {
     $btPFechar.Add_Click({ try { [void](Comando ("/cgi-bin/accessControl.cgi?action=closeDoor&channel={0}" -f (Canal)) 'Fechar porta'); Start-Sleep -Milliseconds 400; LerStatus } catch { MostrarErro 'Buscador: fechar porta' $_.Exception } })
     $btPStatus.Add_Click({ try { LerStatus } catch { MostrarErro 'Buscador: status da porta' $_.Exception } })
     $pAuto.Add_CheckedChanged({ if ($pAuto.Checked) { $tmP.Start() } else { $tmP.Stop() } })
-    $tmP.Add_Tick({ if ($sel.D -and $tabs.SelectedTab -eq $tPorta) { try { LerStatus } catch {} } })
+    $tmP.Add_Tick({ if ($sel.D -and $tabs.SelectedTab -eq $tPorta) { try { LerStatus 1500 } catch {} } })
+    # status liga sozinho ao entrar na aba Porta (nao precisa marcar)
+    $tabs.Add_SelectedIndexChanged({ if ($tabs.SelectedTab -eq $tPorta -and $sel.D) { $pAuto.Checked = $true; $tmP.Start() } else { $tmP.Stop() } })
     function LerPorta {
         $d = Atual; $u, $s = Cred; $i = (Canal) - 1
         $a = ReqUI '/cgi-bin/configManager.cgi?action=getConfig&name=AccessControl'
@@ -1171,7 +1237,7 @@ if ($D.Ini) {
             SensorType = [string]$tg['table.AccessControlGeneral.SensorType']; ButtonExitEnable = [string]$tg['table.AccessControlGeneral.ButtonExitEnable']
             Rele = [string]$tr["table._RelayStatus_[$i].Enable"] }
         $pEstado.SelectedIndex = switch ($v.State) { 'OpenAlways' { 1 } 'CloseAlways' { 2 } default { 0 } }
-        $pTempo.Text = $v.UnlockHoldInterval; $pSensor.Checked = ($v.SensorEnable -eq 'true'); $pAtraso.Text = $v.CloseTimeout; $pNome.Text = $v.Name
+        $pTempo.Text = $(if ($v.UnlockHoldInterval -match '^\d+$') { ([double]$v.UnlockHoldInterval / 1000).ToString() } else { $v.UnlockHoldInterval }); $pSensor.Checked = ($v.SensorEnable -eq 'true'); $pAtraso.Text = $v.CloseTimeout; $pNome.Text = $v.Name
         $pZAberta.Text = $v.OpenAlwaysTime; $pZFechada.Text = $v.CloseAlwaysTime
         $pTipoSensor.SelectedIndex = $(if ($v.SensorType -eq '1') { 1 } else { 0 }); $pBotao.Checked = ($v.ButtonExitEnable -eq 'true')
         $pRele.Checked = ($v.Rele -eq 'true'); $pRele.Enabled = ($rl.Status -eq 200)
@@ -1186,7 +1252,10 @@ if ($D.Ini) {
             $v = $sel.Porta; $i = (Canal) - 1; $q = @(); $desc = @()
             $est = @('Normal', 'OpenAlways', 'CloseAlways')[[math]::Max(0, $pEstado.SelectedIndex)]
             if ($est -ne $v.State) { $q += "AccessControl[$i].State=$est"; $desc += "estado $est" }
-            if ($pTempo.Text.Trim() -ne $v.UnlockHoldInterval) { $n = 0; if (-not [int]::TryParse($pTempo.Text.Trim(), [ref]$n) -or $n -lt 250 -or $n -gt 20000) { throw 'Tempo de abertura: 250 a 20000 ms.' }; $q += "AccessControl[$i].UnlockHoldInterval=$n"; $desc += "tempo $n ms" }
+            $segTxt = $pTempo.Text.Trim().Replace(',', '.'); $seg = 0.0
+            if (-not [double]::TryParse($segTxt, [Globalization.NumberStyles]::Any, [Globalization.CultureInfo]::InvariantCulture, [ref]$seg)) { throw 'Tempo de abertura invalido. Use segundos, ex.: 5 ou 0,25.' }
+            $ms = [int][math]::Round($seg * 1000); if ($ms -lt 250 -or $ms -gt 20000) { throw 'Tempo de abertura: entre 0,25 e 20 segundos.' }
+            if ("$ms" -ne $v.UnlockHoldInterval) { $q += "AccessControl[$i].UnlockHoldInterval=$ms"; $desc += "tempo $seg s" }
             $se = $(if ($pSensor.Checked) { 'true' } else { 'false' }); if ($se -ne $v.SensorEnable) { $q += "AccessControl[$i].SensorEnable=$se"; $desc += "sensor $se" }
             if ($pAtraso.Text.Trim() -ne $v.CloseTimeout) { $n = 0; if (-not [int]::TryParse($pAtraso.Text.Trim(), [ref]$n) -or $n -lt 1 -or $n -gt 9999) { throw 'Atraso do sensor: número de segundos.' }; $q += "AccessControl[$i].CloseTimeout=$n"; $desc += "atraso $n s" }
             if ($pNome.Text.Trim() -ne $v.Name) { $q += "AccessControl[$i].Name=$([Uri]::EscapeDataString($pNome.Text.Trim()))"; $desc += "nome $($pNome.Text.Trim())" }
@@ -1218,11 +1287,18 @@ if ($D.Ini) {
     BL 'UserID' 12 116 $tUsu | Out-Null; $uId = BT 70 112 100 '' $tUsu
     $btUId = BB 'Buscar UserID' 180 110 130 $tUsu
     $btUTodos = BB 'Listar todos' 320 110 130 $tUsu
-    $uFmt = BL '' 465 116 $tUsu; $uFmt.ForeColor = [System.Drawing.Color]::DimGray
+    $uFmt = BL 'Dica: dê dois cliques numa célula (nome, cartão, decimal...) para copiá-la.' 465 116 $tUsu; $uFmt.ForeColor = [System.Drawing.Color]::DimGray
     $uLv = New-Object System.Windows.Forms.ListView; $uLv.View = 'Details'; $uLv.FullRowSelect = $true; $uLv.GridLines = $true; $uLv.HideSelection = $false
     $uLv.Location = New-Object System.Drawing.Point(12, 146); $uLv.Size = New-Object System.Drawing.Size(1020, 210); $uLv.Anchor = 'Top,Left,Right,Bottom'
     foreach ($c in @(@('UserID', 80), @('Nome', 200), @('Cartão (CardNo)', 140), @('Cartão em decimal', 130), @('Status', 90), @('Tipo', 70), @('Válido de', 140), @('Válido até', 140))) { [void]$uLv.Columns.Add($c[0], $c[1]) }
     $tUsu.Controls.Add($uLv)
+    # dois cliques numa celula copia so aquela celula
+    $uLv.Add_MouseDoubleClick({
+        param($src, $e)
+        $h = $uLv.HitTest($e.Location)
+        $txt = if ($h.SubItem) { $h.SubItem.Text } elseif ($h.Item) { $h.Item.SubItems[0].Text } else { '' }
+        if ($txt) { try { [System.Windows.Forms.Clipboard]::SetText($txt); $lbSt.Text = "Copiado: $txt" } catch { $lbSt.Text = "Nao consegui copiar: $($_.Exception.Message)" } }
+    })
 
     # converte o que foi digitado para o CardNo do equipamento (hex maiusculo), completando ate os bits escolhidos
     function CartaoParaHex {
