@@ -1,4 +1,7 @@
-﻿# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
+# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
+# v7.0 (28/10/2026): Buscador passa a usar TODOS os metodos: tabela ARP + fabricante pelo MAC, ONVIF (UDP 3702),
+#                    UPnP/SSDP (UDP 1900), porta HTTPS 443, IPs de fabrica, varias faixas de uma vez (ou todas as placas),
+#                    reconhecimento de interfones TVIP, exibicao da placa Wi-Fi do facial e campo "Localizar (MAC/serie)".
 # v3.5 (27/10/2026): aba "Usuarios" no Buscador (quantidade, busca por cartao decimal/hex com bits, por UserID, lista).
 # v3.4 (27/10/2026): botao "Atualizar" passa a se chamar "Verificar novas versoes" (versao de teste da atualizacao pelo site).
 # v3 (27/10/2026): botao "Buscar IP..." (acha os equipamentos, modelo, se e Bio-T, troca de IP, estado e comandos de porta)
@@ -52,9 +55,13 @@ function LogExcecao($contexto, $ex) {
     Log $m 'ERRO'
 }
 IniciarLog
-Log '=== Captura Facial - versao 6.0 ==='
-# deixa o proprio .ps1 oculto (o cliente ve so o .bat/atalho). Nao e protecao, so arrumacao.
-try { $fi = Get-Item -LiteralPath $PSCommandPath -Force; if (-not ($fi.Attributes -band [System.IO.FileAttributes]::Hidden)) { $fi.Attributes = $fi.Attributes -bor [System.IO.FileAttributes]::Hidden; Log 'Arquivo .ps1 marcado como oculto' } } catch { Log ("Nao consegui ocultar o .ps1: {0}" -f $_.Exception.Message) 'AVISO' }
+Log '=== Captura Facial - versao 7.0 ==='
+# HTTPS (porta 443): aceita certificado proprio do equipamento. ServicePointManager e do processo todo,
+# entao vale tambem para as tarefas de segundo plano (basta definir aqui uma vez).
+try {
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+} catch { Log ("Nao foi possivel ajustar o TLS para HTTPS: {0}" -f $_.Exception.Message) 'AVISO' }
 Log ("Windows: {0} | 64bit: {1}" -f [Environment]::OSVersion.VersionString, [Environment]::Is64BitOperatingSystem)
 Log ("PowerShell: {0} | CLR: {1}" -f $PSVersionTable.PSVersion, $PSVersionTable.CLRVersion)
 Log ("Usuario: {0}\{1} | Computador: {2}" -f $env:USERDOMAIN, $env:USERNAME, $env:COMPUTERNAME)
@@ -255,7 +262,7 @@ $btnAbrir = NovoBotao 'Abrir pasta das fotos' 410 585 160
 $btnPasta = NovoBotao 'Trocar pasta...' 580 585 120
 $btnLog   = NovoBotao 'Abrir LOG' 710 585 100
 $btnAtu   = NovoBotao 'Verificar novas versões' 815 585 150; $btnAtu.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$lblVersao = NovoLabel 'Versão 6.0' 815 617; $lblVersao.ForeColor = [System.Drawing.Color]::DimGray; $lblVersao.Anchor = 'Left,Bottom'
+$lblVersao = NovoLabel 'Versão 7.0' 815 617; $lblVersao.ForeColor = [System.Drawing.Color]::DimGray; $lblVersao.Anchor = 'Left,Bottom'
 $lblStatus = NovoLabel 'Informe o IP, usuário e senha do facial e clique em Conectar.' 12 640; $lblStatus.Anchor = 'Left,Bottom'; $lblStatus.AutoSize = $false; $lblStatus.Width = 930; $lblStatus.Height = 24
 
 $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 50
@@ -269,7 +276,7 @@ public class OrdemPorNome : System.Collections.IComparer {
     public int Compare(object a, object b) { return string.CompareOrdinal(((System.Windows.Forms.ListViewItem)a).Name, ((System.Windows.Forms.ListViewItem)b).Name); }
 }
 '@
-$script:FuncsBg = @('Resumo', 'ReqEquip', 'Tabela', 'IpValido', 'IpNum', 'NumIp', 'CapsSemSenha', 'SondaSemSenha', 'Identificar', 'VarrerFaixa', 'BuscarMulticast')
+$script:FuncsBg = @('Resumo', 'ReqEquip', 'Tabela', 'IpValido', 'IpNum', 'NumIp', 'CapsSemSenha', 'SondaSemSenha', 'SondaTvip', 'VendorPorMac', 'LerArp', 'DescobrirOnvif', 'DescobrirSsdp', 'Identificar', 'VarrerFaixa', 'BuscarMulticast')
 $script:Pool = $null
 function PreambuloBg {
     $t = "function Log(`$msg, `$nivel = 'INFO') { `$l = ('{0} [{1}] {2}' -f (Get-Date -Format 'dd/MM HH:mm:ss.fff'), `$nivel, `$msg) + [Environment]::NewLine; [System.Threading.Monitor]::Enter(`$script:Trava); try { [System.IO.File]::AppendAllText(`$script:ArqLog, `$l, [System.Text.Encoding]::UTF8) } catch {} finally { [System.Threading.Monitor]::Exit(`$script:Trava) } }`n"
@@ -437,9 +444,7 @@ $btnAtu.Add_Click({
         $pasta = Join-Path (Split-Path $PSCommandPath) 'versao_anterior'; New-Item -ItemType Directory -Force -Path $pasta | Out-Null
         $copia = Join-Path $pasta ('CAPTURA_FACIAL_{0}_{1}.ps1' -f $vA, (Get-Date -Format 'yyyyMMdd_HHmmss'))
         Copy-Item -LiteralPath $PSCommandPath -Destination $copia -Force
-        try { $fh = Get-Item -LiteralPath $PSCommandPath -Force; $fh.Attributes = ($fh.Attributes -band (-bnot [System.IO.FileAttributes]::Hidden)) } catch {}   # tira o oculto para poder gravar
         [System.IO.File]::WriteAllText($PSCommandPath, $txtNovo, (New-Object System.Text.UTF8Encoding($true)))   # UTF-8 com BOM (acentos no PowerShell 5)
-        try { $fh2 = Get-Item -LiteralPath $PSCommandPath -Force; $fh2.Attributes = $fh2.Attributes -bor [System.IO.FileAttributes]::Hidden } catch {}   # volta a ocultar
         Log "Atualizar: trocado $vA -> $vN (copia em $copia); reabrindo"
         Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
         $f.Close()
@@ -496,9 +501,13 @@ $script:BioTComApi = @('SS 5520','SS 5530 MF FACE','SS 5530 MF FACE LITE','SS 35
     'SS 3540 MF FACE BIO','SS 3532 MF W','SS 3532 MF','SS 3542 MF W','SS 3531 MF','SS 5531 MF W','SS 5541 MF W','SS 5532 MF W',
     'SS 5542 MF W','SS 5430 MF BIO FT','SS 3541 MF','SS 3531 MF LITE','SS 3542 MF LITE','SS 5531 MF EX')
 $script:BioTSemApi = @('SS 3420 BIO','SS 3420 MF BIO')
+# IPs de fabrica mais comuns da linha (o padrao Dahua/Intelbras e 192.168.1.108; os demais vem da
+# documentacao/observacao). O PC precisa ter rota para a faixa 192.168.x para alcancar esses IPs.
+$script:IpsFabrica = @('192.168.1.108', '192.168.1.110', '192.168.0.108', '192.168.1.201', '192.168.1.80')
 function NormModelo($m) { return (($m + '') -replace '[\s\-_]', '').ToUpperInvariant() }
 function ClassificarBioT($modelo) {
     if (-not $modelo) { return '?' }
+    if ($modelo -like 'Interfone*' -or $modelo -like '*TVIP*') { return 'Interfone TVIP' }
     if ($modelo -like 'INTELBRAS/DAHUA*') { return 'Intelbras - precisa da senha' }
     if ($modelo -like '(*') { return 'NÃO' }
     $n = NormModelo $modelo
@@ -511,7 +520,8 @@ function ClassificarBioT($modelo) {
 
 # --- requisicao a um equipamento qualquer (Digest), sem mexer na conexao principal
 function ReqEquip($ip, $porta, $usuario, $senha, $caminho, $timeout = 6000) {
-    $base = "http://${ip}:$porta"
+    $esq = if ("$porta" -eq '443') { 'https' } else { 'http' }
+    $base = "${esq}://${ip}:$porta"
     try {
         $req = [System.Net.HttpWebRequest]::Create($base + $caminho)
         $req.Proxy = $null; $req.Timeout = $timeout; $req.ReadWriteTimeout = $timeout; $req.KeepAlive = $false
@@ -643,6 +653,132 @@ function BuscarMulticast($segundos = 3, $ipsDiretos = @()) {
     return $achados
 }
 
+# --- fabricante pelo comeco do MAC (OUI). 808544 = Intelbras (conferido num SS 3532 MF W em 28/10/2026).
+#     Os demais sao OUIs publicos da Dahua/Intelbras; confira e acrescente conforme encontrar.
+function VendorPorMac($mac) {
+    if (-not $mac) { return '' }
+    $m = ($mac -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
+    if ($m.Length -lt 6) { return '' }
+    $oui = $m.Substring(0, 6)
+    $intelbras = @('808544')
+    $dahua = @('3CEF8C', '9002A9', '14A78B', '38AF29', 'E0508B', 'BC325F', '907AF1', '4C11BF', '08EDED', '24526A', '2CB75D', 'D43D7E', 'A0BDCD', '6C1C71')
+    if ($intelbras -contains $oui) { return 'Intelbras' }
+    if ($dahua -contains $oui) { return 'Intelbras/Dahua' }
+    return ''
+}
+# --- A) tabela ARP do Windows: IPs que este PC ja "viu" na rede (acha ate quem bloqueia ping/web)
+function LerArp {
+    $r = @()
+    try {
+        $out = (& arp -a) 2>$null
+        foreach ($l in $out) {
+            if ($l -match '(\d{1,3}(?:\.\d{1,3}){3})[\s]+([0-9A-Fa-f]{2}(?:[-:][0-9A-Fa-f]{2}){5})') {
+                $ip = $Matches[1]; $mac = ($Matches[2] -replace '[-:]', '').ToUpperInvariant()
+                if ($mac -eq 'FFFFFFFFFFFF' -or $mac -eq '000000000000') { continue }
+                if ($ip -like '169.254.*' -or $ip -like '224.*' -or $ip -like '239.*' -or $ip -like '255.*' -or $ip -like '*.255') { continue }
+                $r += [pscustomobject]@{ IP = $ip; MAC = ($mac -replace '(..)(?=.)', '$1:') }
+            }
+        }
+        Log ("Busca ARP: {0} host(s) na tabela ARP do PC" -f $r.Count)
+    } catch { Log ("Busca ARP falhou: {0}" -f $_.Exception.Message) 'AVISO' }
+    return $r
+}
+# --- C) ONVIF WS-Discovery (UDP 3702, multicast 239.255.255.250): cameras/equipamentos que respondem ONVIF
+function DescobrirOnvif($segundos = 3) {
+    $ips = @{}; $socks = @()
+    $uuid = [guid]::NewGuid().ToString()
+    $probe = '<?xml version="1.0" encoding="UTF-8"?><e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope" xmlns:w="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery" xmlns:dn="http://www.onvif.org/ver10/network/wsdl"><e:Header><w:MessageID>uuid:' + $uuid + '</w:MessageID><w:To e:mustUnderstand="true">urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To><w:Action e:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header><e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body></e:Envelope>'
+    $corpo = [System.Text.Encoding]::UTF8.GetBytes($probe)
+    $grupo = [System.Net.IPAddress]::Parse('239.255.255.250')
+    try {
+        foreach ($ni in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($ni.OperationalStatus -ne 'Up' -or $ni.NetworkInterfaceType -eq 'Loopback') { continue }
+            foreach ($u in $ni.GetIPProperties().UnicastAddresses) {
+                if ($u.Address.AddressFamily -ne 'InterNetwork' -or $u.Address.ToString() -like '169.254.*') { continue }
+                try {
+                    $s = New-Object System.Net.Sockets.UdpClient
+                    $s.Client.SetSocketOption('Socket', 'ReuseAddress', $true)
+                    $s.Client.Bind((New-Object System.Net.IPEndPoint($u.Address, 0)))
+                    [void]$s.Send($corpo, $corpo.Length, (New-Object System.Net.IPEndPoint($grupo, 3702)))
+                    $socks += $s
+                } catch {}
+            }
+        }
+        $fim = (Get-Date).AddSeconds($segundos)
+        while ((Get-Date) -lt $fim) {
+            $algum = $false
+            foreach ($s in $socks) {
+                while ($s.Available -gt 0) {
+                    $algum = $true
+                    $de = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    $b = $s.Receive([ref]$de); $t = [System.Text.Encoding]::UTF8.GetString($b)
+                    foreach ($mm in [regex]::Matches($t, 'https?://(\d{1,3}(?:\.\d{1,3}){3})')) { $ips[$mm.Groups[1].Value] = $true }
+                    $ips[$de.Address.ToString()] = $true
+                }
+            }
+            if (-not $algum) { Start-Sleep -Milliseconds 100 }
+        }
+    } catch { Log ("Busca ONVIF falhou: {0}" -f $_.Exception.Message) 'AVISO' }
+    finally { foreach ($s in $socks) { try { $s.Close() } catch {} } }
+    Log ("Busca ONVIF: {0} IP(s)" -f $ips.Count)
+    return @($ips.Keys)
+}
+# --- D) UPnP/SSDP (UDP 1900, multicast 239.255.255.250): equipamentos com UPnP ligado
+function DescobrirSsdp($segundos = 3) {
+    $ips = @{}; $socks = @()
+    $msg = "M-SEARCH * HTTP/1.1`r`nHOST: 239.255.255.250:1900`r`nMAN: `"ssdp:discover`"`r`nMX: 2`r`nST: ssdp:all`r`n`r`n"
+    $corpo = [System.Text.Encoding]::ASCII.GetBytes($msg)
+    $grupo = [System.Net.IPAddress]::Parse('239.255.255.250')
+    try {
+        foreach ($ni in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($ni.OperationalStatus -ne 'Up' -or $ni.NetworkInterfaceType -eq 'Loopback') { continue }
+            foreach ($u in $ni.GetIPProperties().UnicastAddresses) {
+                if ($u.Address.AddressFamily -ne 'InterNetwork' -or $u.Address.ToString() -like '169.254.*') { continue }
+                try {
+                    $s = New-Object System.Net.Sockets.UdpClient
+                    $s.Client.SetSocketOption('Socket', 'ReuseAddress', $true)
+                    $s.Client.Bind((New-Object System.Net.IPEndPoint($u.Address, 0)))
+                    [void]$s.Send($corpo, $corpo.Length, (New-Object System.Net.IPEndPoint($grupo, 1900)))
+                    $socks += $s
+                } catch {}
+            }
+        }
+        $fim = (Get-Date).AddSeconds($segundos)
+        while ((Get-Date) -lt $fim) {
+            $algum = $false
+            foreach ($s in $socks) {
+                while ($s.Available -gt 0) {
+                    $algum = $true
+                    $de = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+                    $b = $s.Receive([ref]$de); $t = [System.Text.Encoding]::ASCII.GetString($b)
+                    $ip = $de.Address.ToString()
+                    if ($t -match '(?im)^LOCATION\s*:\s*https?://(\d{1,3}(?:\.\d{1,3}){3})') { $ip = $Matches[1] }
+                    $ips[$ip] = $true
+                }
+            }
+            if (-not $algum) { Start-Sleep -Milliseconds 100 }
+        }
+    } catch { Log ("Busca UPnP falhou: {0}" -f $_.Exception.Message) 'AVISO' }
+    finally { foreach ($s in $socks) { try { $s.Close() } catch {} } }
+    Log ("Busca UPnP/SSDP: {0} IP(s)" -f $ips.Count)
+    return @($ips.Keys)
+}
+# --- H) interfone TVIP (nao e Dahua: site lighttpd, titulo "IP Phone"/"TVIP")
+function SondaTvip($ip, $porta) {
+    $esq = if ("$porta" -eq '443') { 'https' } else { 'http' }
+    try {
+        $req = [System.Net.HttpWebRequest]::Create("${esq}://${ip}:$porta/")
+        $req.Proxy = $null; $req.Timeout = 4000; $req.ReadWriteTimeout = 4000; $req.KeepAlive = $false
+        $resp = $req.GetResponse(); $srv = [string]$resp.Headers['Server']
+        try { $t = (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } finally { $resp.Close() }
+        $titulo = ''; if ($t -match '(?i)<title>\s*([^<]*)</title>') { $titulo = $Matches[1].Trim() }
+        Log ("[{0}] GET / (TVIP?) -> Server={1} title={2}" -f $ip, $srv, $titulo)
+        if ($titulo -match '(?i)TVIP|IP ?Phone' -or ($srv -match '(?i)lighttpd' -and $titulo -match '(?i)phone')) {
+            return ("Interfone " + $(if ($titulo) { $titulo } else { 'TVIP' }))
+        }
+    } catch { Log ("[{0}] GET / (TVIP?) -> {1}" -f $ip, $_.Exception.GetBaseException().Message) 'AVISO' }
+    return ''
+}
 # --- 2) varredura: quem responde na porta HTTP da faixa
 # v3.2 (27/10): em lotes de 64 (254 de uma vez fazia a rede/PC perder respostas - ex.: .158 e .159 respondiam ping
 # e nao apareciam), 1,5 s por IP, e olha tambem a porta 37777 (exclusiva dos Intelbras/Dahua) e o ping.
@@ -657,29 +793,31 @@ function VarrerFaixa($inicio, $fimIp, $porta, $msTimeout = 1500, $tamLote = 64, 
         $lote = $ips[$b..([math]::Min($b + $tamLote - 1, $ips.Count - 1))]
         $tarefas = @()
         foreach ($ip in $lote) {
-            $c1 = New-Object System.Net.Sockets.TcpClient; $c2 = New-Object System.Net.Sockets.TcpClient; $pg = New-Object System.Net.NetworkInformation.Ping
-            $tarefas += [pscustomobject]@{ IP = $ip; C1 = $c1; T1 = $c1.ConnectAsync($ip, [int]$porta); C2 = $c2; T2 = $c2.ConnectAsync($ip, 37777); P = $pg; T3 = $pg.SendPingAsync($ip, $msTimeout) }
+            $c1 = New-Object System.Net.Sockets.TcpClient; $c2 = New-Object System.Net.Sockets.TcpClient; $c4 = New-Object System.Net.Sockets.TcpClient; $pg = New-Object System.Net.NetworkInformation.Ping
+            $tarefas += [pscustomobject]@{ IP = $ip; C1 = $c1; T1 = $c1.ConnectAsync($ip, [int]$porta); C2 = $c2; T2 = $c2.ConnectAsync($ip, 37777); C4 = $c4; T4 = $c4.ConnectAsync($ip, 443); P = $pg; T3 = $pg.SendPingAsync($ip, $msTimeout) }
         }
         $limite = (Get-Date).AddMilliseconds($msTimeout + 300)
-        while ((Get-Date) -lt $limite -and @($tarefas | Where-Object { -not ($_.T1.IsCompleted -and $_.T2.IsCompleted -and $_.T3.IsCompleted) }).Count -gt 0) { Start-Sleep -Milliseconds 50; Bombear }
+        while ((Get-Date) -lt $limite -and @($tarefas | Where-Object { -not ($_.T1.IsCompleted -and $_.T2.IsCompleted -and $_.T3.IsCompleted -and $_.T4.IsCompleted) }).Count -gt 0) { Start-Sleep -Milliseconds 50; Bombear }
         foreach ($x in $tarefas) {
             $h = ($x.T1.IsCompleted -and -not $x.T1.IsFaulted -and $x.C1.Connected)
             $d = ($x.T2.IsCompleted -and -not $x.T2.IsFaulted -and $x.C2.Connected)
+            $hs = ($x.T4.IsCompleted -and -not $x.T4.IsFaulted -and $x.C4.Connected)
             $p = $false; try { $p = ($x.T3.IsCompleted -and -not $x.T3.IsFaulted -and $x.T3.Result.Status -eq 'Success') } catch {}
-            if ($h -or $d -or $p) { $res += [pscustomobject]@{ IP = $x.IP; Http = $h; P37777 = $d; Ping = $p } }
-            try { $x.C1.Close() } catch {}; try { $x.C2.Close() } catch {}; try { $x.P.Dispose() } catch {}
+            if ($h -or $d -or $hs -or $p) { $res += [pscustomobject]@{ IP = $x.IP; Http = $h; P37777 = $d; Https = $hs; Ping = $p } }
+            try { $x.C1.Close() } catch {}; try { $x.C2.Close() } catch {}; try { $x.C4.Close() } catch {}; try { $x.P.Dispose() } catch {}
         }
     }
-    Log ("Varredura {0}-{1} ({7} IPs, {8} ms): {2} IP(s) responderam ({3} com porta {4}, {5} com porta 37777 Intelbras/Dahua, {6} so ping)" -f $inicio, $fimIp, $res.Count,
-        @($res | Where-Object { $_.Http }).Count, $porta, @($res | Where-Object { $_.P37777 }).Count, @($res | Where-Object { -not $_.Http -and -not $_.P37777 }).Count, $ips.Count, $msTimeout)
+    Log ("Varredura {0}-{1} ({7} IPs, {8} ms): {2} IP(s) responderam ({3} com porta {4}, {5} com porta 37777 Intelbras/Dahua, {9} com 443 HTTPS, {6} so ping)" -f $inicio, $fimIp, $res.Count,
+        @($res | Where-Object { $_.Http }).Count, $porta, @($res | Where-Object { $_.P37777 }).Count, @($res | Where-Object { -not $_.Http -and -not $_.P37777 -and -not $_.Https }).Count, $ips.Count, $msTimeout, @($res | Where-Object { $_.Https }).Count)
     return $res
 }
 # --- identifica um IP: modelo, serie, firmware (precisa de usuario e senha; sem eles diz so se e Intelbras/Dahua)
 # Pergunta que a tela de login web dos Intelbras/Dahua faz ANTES da senha: responde com realm "Login to <serie>".
 function SondaSemSenha($ip, $porta) {
+    $esq = if ("$porta" -eq '443') { 'https' } else { 'http' }
     $r = @{ Marca = $false; Serie = ''; Pista = '' }
     try {
-        $req = [System.Net.HttpWebRequest]::Create("http://${ip}:$porta/RPC2_Login")
+        $req = [System.Net.HttpWebRequest]::Create("${esq}://${ip}:$porta/RPC2_Login")
         $req.Proxy = $null; $req.Method = 'POST'; $req.ContentType = 'application/json'; $req.Timeout = 4000; $req.ReadWriteTimeout = 4000; $req.KeepAlive = $false
         $b = [System.Text.Encoding]::UTF8.GetBytes('{"method":"global.login","params":{"userName":"admin","password":"","clientType":"Web3.0","loginType":"Direct"},"id":1}')
         $st = $req.GetRequestStream(); $st.Write($b, 0, $b.Length); $st.Close()
@@ -691,7 +829,7 @@ function SondaSemSenha($ip, $porta) {
     if (-not $r.Marca) {
         # pagina inicial da interface web nova (Web 2.0) dos Intelbras/Dahua
         try {
-            $req = [System.Net.HttpWebRequest]::Create("http://${ip}:$porta/"); $req.Proxy = $null; $req.Timeout = 4000; $req.ReadWriteTimeout = 4000; $req.KeepAlive = $false
+            $req = [System.Net.HttpWebRequest]::Create("${esq}://${ip}:$porta/"); $req.Proxy = $null; $req.Timeout = 4000; $req.ReadWriteTimeout = 4000; $req.KeepAlive = $false
             $resp = $req.GetResponse(); try { $t = (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } finally { $resp.Close() }
             if ($t -match 'browserJudge\.js' -and $t -match 'tempToken') { $r.Marca = $true; $r.Pista = 'pagina web' }
             Log ("[{0}] GET / (sem senha) -> {1}" -f $ip, (Resumo ($t -replace '\s+', ' ') 200))
@@ -704,9 +842,10 @@ function SondaSemSenha($ip, $porta) {
 #   -> {"params":{"DevModel":"SS 3532 MF W","SN":"...","SoftVersion":"...","vendor":"Intelbras","NetInfo":{"eth0":{"IP":..,"MAC":..}}},"result":true}
 # Firmwares sem esse metodo: a pagina usa /current_config/webCapsConfig (mesmos campos).
 function CapsSemSenha($ip, $porta) {
+    $esq = if ("$porta" -eq '443') { 'https' } else { 'http' }
     $t = $null
     try {
-        $req = [System.Net.HttpWebRequest]::Create("http://${ip}:$porta/RPC2")
+        $req = [System.Net.HttpWebRequest]::Create("${esq}://${ip}:$porta/RPC2")
         $req.Proxy = $null; $req.Method = 'POST'; $req.ContentType = 'application/json'; $req.Timeout = 3000; $req.ReadWriteTimeout = 3000; $req.KeepAlive = $false
         $b = [System.Text.Encoding]::UTF8.GetBytes('{"method":"WebInit.getCaps","params":null,"id":1,"session":0}')
         $st = $req.GetRequestStream(); $st.Write($b, 0, $b.Length); $st.Close()
@@ -715,7 +854,7 @@ function CapsSemSenha($ip, $porta) {
     } catch { Log ("[{0}] POST /RPC2 WebInit.getCaps (sem senha) -> {1}" -f $ip, $_.Exception.GetBaseException().Message) 'AVISO' }
     if (-not ($t -match 'DevModel')) {
         try {
-            $req = [System.Net.HttpWebRequest]::Create("http://${ip}:$porta/current_config/webCapsConfig?version=2.400"); $req.Proxy = $null; $req.Method = 'POST'; $req.ContentLength = 0; $req.Timeout = 3000; $req.ReadWriteTimeout = 3000; $req.KeepAlive = $false
+            $req = [System.Net.HttpWebRequest]::Create("${esq}://${ip}:$porta/current_config/webCapsConfig?version=2.400"); $req.Proxy = $null; $req.Method = 'POST'; $req.ContentLength = 0; $req.Timeout = 3000; $req.ReadWriteTimeout = 3000; $req.KeepAlive = $false
             $resp = $req.GetResponse(); try { $t = (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } finally { $resp.Close() }
             Log ("[{0}] /current_config/webCapsConfig (sem senha) -> {1}" -f $ip, (Resumo $t 300))
         } catch { Log ("[{0}] /current_config/webCapsConfig (sem senha) -> {1}" -f $ip, $_.Exception.GetBaseException().Message) 'AVISO' }
@@ -725,14 +864,16 @@ function CapsSemSenha($ip, $porta) {
     $c = if ($j.params) { $j.params } else { $j }
     if (-not $c.DevModel) { return $null }
     $mac = ''; try { $mac = [string]$c.NetInfo.eth0.MAC } catch {}
-    return @{ Modelo = [string]$c.DevModel; Serie = [string]$c.SN; Firmware = [string]$c.SoftVersion; MAC = $mac }
+    $wip = ''; $wmac = ''
+    try { if ($c.NetInfo.wifi) { $wmac = [string]$c.NetInfo.wifi.MAC; if ($c.NetInfo.wifi.IP) { $wip = [string]$c.NetInfo.wifi.IP } } } catch {}
+    return @{ Modelo = [string]$c.DevModel; Serie = [string]$c.SN; Firmware = [string]$c.SoftVersion; MAC = $mac; WifiIP = $wip; WifiMAC = $wmac }
 }
 function Identificar($ip, $porta, $usuario, $senha) {
-    $o = [pscustomobject]@{ IP = $ip; Porta = [string]$porta; Modelo = ''; Serie = ''; MAC = ''; Firmware = ''; Mascara = ''; Gateway = ''; Dhcp = ''; Origem = 'varredura' }
+    $o = [pscustomobject]@{ IP = $ip; Porta = [string]$porta; Modelo = ''; Serie = ''; MAC = ''; Firmware = ''; Mascara = ''; Gateway = ''; Dhcp = ''; WifiIP = ''; WifiMAC = ''; Origem = 'varredura' }
     # 1o SEM senha: modelo, serie, MAC e firmware (igual a tela de login)
     $cp = CapsSemSenha $ip $porta
     if ($cp) {
-        $o.Modelo = $cp.Modelo; $o.Serie = $cp.Serie; $o.MAC = $cp.MAC; $o.Firmware = $cp.Firmware; $o.Origem = 'varredura (sem senha)'
+        $o.Modelo = $cp.Modelo; $o.Serie = $cp.Serie; $o.MAC = $cp.MAC; $o.Firmware = $cp.Firmware; $o.WifiIP = [string]$cp.WifiIP; $o.WifiMAC = [string]$cp.WifiMAC; $o.Origem = 'varredura (sem senha)'
         if (-not $senha) { return $o }
         $rd = ReqEquip $ip $porta $usuario $senha '/cgi-bin/configManager.cgi?action=getConfig&name=Network' 4000
         if ($rd.Status -eq 200) { $t = Tabela $rd.Texto; $nic = $t['table.Network.DefaultInterface']; if (-not $nic) { $nic = 'eth0' }
@@ -764,6 +905,11 @@ function Identificar($ip, $porta, $usuario, $senha) {
             $o.Modelo = if ($senha -and $si.Status -eq 401) { 'INTELBRAS/DAHUA (senha errada: informe a certa para ver o modelo)' } else { 'INTELBRAS/DAHUA (sem senha: informe para ver o modelo)' }
             Log ("[{0}] identificado como Intelbras/Dahua pela {1}" -f $ip, $sd.Pista)
         }
+    }
+    if ($o.Modelo -like '(*') {
+        # H) interfone TVIP (outro sistema web, nao responde o DHDiscover/CGI Dahua)
+        $tv = SondaTvip $ip $porta
+        if ($tv) { $o.Modelo = $tv; Log ("[{0}] identificado como {1}" -f $ip, $tv) }
     }
     return $o
 }
@@ -812,9 +958,20 @@ function Identificar($ip, $porta, $usuario, $senha) {
     BL 'Senha' 597 14 $w | Out-Null;      $bSenha = BT 645 10 110 $txtSenha.Text $w; $bSenha.UseSystemPasswordChar = $true
     $btBuscar = BB 'BUSCAR' 765 8 110 $w; $btBuscar.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
     $btUsar = BB 'Usar na tela principal' 885 8 180 $w; $btUsar.Enabled = $false
-    $lbFx = BL ('Faixas deste PC: ' + ($faixas -join '   ')) 12 42 $w; $lbFx.ForeColor = [System.Drawing.Color]::DimGray
-    $bSo = BC 'Só Intelbras/Dahua (esconde PCs e outros)' 765 40 $w; $bSo.Checked = $false
-    $bLivre = BC 'Mostrar IPs livres' 600 40 $w
+    $bTodas = BC 'Todas as faixas do PC' 12 41 $w
+    $bExtra = BC 'ONVIF + UPnP + ARP + IPs de fábrica' 172 41 $w; $bExtra.Checked = $true
+    $bLivre = BC 'IPs livres' 432 41 $w
+    $bSo = BC 'Só Intelbras/Dahua' 527 41 $w; $bSo.Checked = $false
+    BL 'Localizar (MAC/série):' 682 43 $w | Out-Null; $bLoc = BT 820 39 150 '' $w
+    $bTodas.Add_CheckedChanged({ if ($bTodas.Checked) { $bFaixa.Text = ((FaixasDoPc) -join '  ') } })
+    # Localizar (B): seleciona a 1a linha cujo IP/MAC/série/modelo contém o texto digitado
+    $bLoc.Add_TextChanged({
+        $q = $bLoc.Text.Trim(); if (-not $q) { return }
+        foreach ($it in $lv.Items) {
+            $d = $it.Tag
+            if (("$($d.IP) $($d.MAC) $($d.Serie) $($d.Modelo)") -match [regex]::Escape($q)) { $it.Selected = $true; $it.EnsureVisible(); break }
+        }
+    })
 
     $lv = New-Object System.Windows.Forms.ListView; $lv.View = 'Details'; $lv.FullRowSelect = $true; $lv.GridLines = $true; $lv.HideSelection = $false; $lv.MultiSelect = $false
     $lv.ListViewItemSorter = New-Object OrdemPorNome
@@ -937,6 +1094,7 @@ Digite o ID (numero) da zona de tempo cadastrada no equipamento. Use 255 para na
         for ($k = 0; $k -lt $vals.Count; $k++) { $it.SubItems[$k].Text = [string]$vals[$k] }
         $bt = $vals[3]; $it.ForeColor = [System.Drawing.Color]::Black; $it.BackColor = [System.Drawing.Color]::White
         if ($bt -like 'SIM*') { $it.BackColor = [System.Drawing.Color]::FromArgb(220, 245, 225) } elseif ($bt -like '*SEM API*') { $it.BackColor = [System.Drawing.Color]::FromArgb(255, 240, 210) }
+        elseif ($bt -eq 'Interfone TVIP') { $it.BackColor = [System.Drawing.Color]::FromArgb(225, 230, 250) }
         elseif ($bt -like 'Intelbras*') { $it.BackColor = [System.Drawing.Color]::FromArgb(255, 250, 205) }
         elseif ($bt -eq 'NÃO') { $it.ForeColor = [System.Drawing.Color]::Gray }
         if ($d.Origem -eq 'livre') { $it.SubItems[3].Text = '-'; $it.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255); $it.ForeColor = [System.Drawing.Color]::DarkBlue }
@@ -955,7 +1113,7 @@ Digite o ID (numero) da zona de tempo cadastrada no equipamento. Use 255 para na
             $bom = { param($m) $m -and $m -notlike '(*' -and $m -notlike 'INTELBRAS/DAHUA*' }
             if ((& $bom $d.Modelo) -and -not (& $bom $o.Modelo)) { $o.Modelo = $d.Modelo }
             elseif ($d.Modelo -like 'INTELBRAS/DAHUA*' -and $o.Modelo -like '(*') { $o.Modelo = $d.Modelo }
-            foreach ($k in @('Serie', 'MAC', 'Firmware', 'Mascara', 'Gateway', 'Dhcp')) { if (-not $o.$k -and $d.$k) { $o.$k = $d.$k } }
+            foreach ($k in @('Serie', 'MAC', 'Firmware', 'Mascara', 'Gateway', 'Dhcp', 'WifiIP', 'WifiMAC')) { if (-not $o.$k -and $d.$k) { $o.$k = $d.$k } }
             if ($o.Origem -notlike "*$($d.Origem)*") { $o.Origem = "$($o.Origem) + $($d.Origem)" }
         } else { $o = $d; $script:BTodos[$d.IP] = $o }
         $it = $script:BItens[$o.IP]
@@ -1012,23 +1170,26 @@ Digite o ID (numero) da zona de tempo cadastrada no equipamento. Use 255 para na
             $lotes = @()
             if ($null -ne $D.Vivos -and -not $script:BIdent) { $script:BIdent = $true; $lotes += ,@($D.Vivos) }
             if ($null -ne $D.Vivos2 -and -not $script:BIdent2) { $script:BIdent2 = $true; $lotes += ,@($D.Vivos2) }
+            if ($null -ne $D.Vivos3 -and -not $script:BIdent3) { $script:BIdent3 = $true; $lotes += ,@($D.Vivos3) }
             foreach ($lt in $lotes) {
                 $D.Total = $D.Total + @($lt).Count
                 foreach ($v in @($lt)) {
-                    if (-not $v.Http) {
+                    if (-not $v.Http -and -not $v.Https) {
                         # sem porta web: ainda assim mostra (o .158/.159 do teste so respondiam ping)
                         $mod = if ($v.P37777) { 'INTELBRAS/DAHUA (porta 37777 aberta; web fechada ou em outra porta)' } else { '(responde ping, sem porta web - PC ou outro equipamento)' }
-                        $D.Fila.Enqueue([pscustomobject]@{ IP = $v.IP; Porta = $D.Porta; Modelo = $mod; Serie = ''; MAC = ''; Firmware = ''; Mascara = ''; Gateway = ''; Dhcp = ''; Origem = $(if ($v.P37777) { 'varredura 37777' } else { 'ping' }) })
+                        $D.Fila.Enqueue([pscustomobject]@{ IP = $v.IP; Porta = $D.Porta; Modelo = $mod; Serie = ''; MAC = ''; Firmware = ''; Mascara = ''; Gateway = ''; Dhcp = ''; WifiIP = ''; WifiMAC = ''; Origem = $(if ($v.P37777) { 'varredura 37777' } else { 'ping' }) })
                         $D.Feitos = $D.Feitos + 1; continue
                     }
-                    $j = [hashtable]::Synchronized(@{ Run = $true; Fila = $D.Fila; IP = $v.IP; Porta = $D.Porta; U = $D.U; S = $D.S; Pai = $D; Dh = $v.P37777 })
+                    # porta para identificar: a HTTP informada se respondeu; senao 443 (HTTPS)
+                    $portaId = if ($v.Http) { $D.Porta } elseif ($v.Https) { '443' } else { $D.Porta }
+                    $j = [hashtable]::Synchronized(@{ Run = $true; Fila = $D.Fila; IP = $v.IP; Porta = $portaId; U = $D.U; S = $D.S; Pai = $D; Dh = $v.P37777 })
                     $script:BTarefas += IniciarBg '$r = Identificar $D.IP $D.Porta $D.U $D.S; if ($D.Dh -and $r.Modelo -like "(*") { $r.Modelo = "INTELBRAS/DAHUA (porta 37777 aberta: informe a senha para ver o modelo)" }; if ($D.Pai.Run) { $D.Fila.Enqueue($r) }; $D.Pai.Feitos = $D.Pai.Feitos + 1' $j
                 }
             }
             if ($script:PrecisaOrdenar) { $script:PrecisaOrdenar = $false; $lv.Sort() }
             $ab = @($script:BTarefas | Where-Object { -not $_.H.IsCompleted }).Count
             $t, $b = ContarAchados
-            if ($ab -gt 0 -or -not $script:BIdent -or -not $script:BIdent2) {
+            if ($ab -gt 0 -or -not $script:BIdent -or -not $script:BIdent2 -or -not $script:BIdent3) {
                 $fase = if (-not $script:BIdent) { $D.Status } else { "Identificando $($D.Feitos) de $($D.Total)" }
                 $lbSt.Text = "Buscando... $t achado(s), $b Bio-T  |  $fase   (já pode clicar num equipamento e trabalhar nele)"
             } else {
@@ -1051,28 +1212,62 @@ Digite o ID (numero) da zona de tempo cadastrada no equipamento. Use 255 para na
             $porta = $bPorta.Text.Trim(); if (-not $porta) { $porta = '80' }
             $u, $s = Cred
             Log ("Buscador: BUSCAR faixa={0} porta={1} usuario={2} senha={3}" -f $bFaixa.Text, $porta, $u, $(if ($s) { 'informada' } else { 'VAZIA' }))
-            $ipsFaixa = @(); $ini = $null; $fim = $null
-            if ($bFaixa.Text -match '^\s*([\d.]+)\s*-\s*([\d.]+)\s*$' -and (IpValido $Matches[1]) -and (IpValido $Matches[2])) {
-                $ini = $Matches[1]; $fim = $Matches[2]
-                $a1 = IpNum $ini; $a2 = IpNum $fim; if ($a2 -lt $a1) { $tmp = $a1; $a1 = $a2; $a2 = $tmp }
-                if (($a2 - $a1) -gt 1023) { throw 'Faixa grande demais (máximo 1024 IPs).' }
-                for ($n = $a1; $n -le $a2; $n++) { $ipsFaixa += (NumIp $n) }
-            } elseif ($bFaixa.Text.Trim()) { throw 'Faixa inválida (use 10.1.31.1-10.1.31.254).' }
-            $script:BFaixaIps = $ipsFaixa; $script:BIdent2 = $false
-            $D = [hashtable]::Synchronized(@{ Run = $true; Fila = (New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'); Status = 'Procurando...'; Vivos = $null; Vivos2 = $null
-                Ips = $ipsFaixa; Ini = $ini; Fim = $fim; Porta = $porta; U = $u; S = $s; Feitos = 0; Total = 0 })
+            # G) uma ou varias faixas no mesmo campo (separadas por virgula, ponto-e-virgula, espaco ou linha)
+            $ipsFaixa = @(); $faixasList = @()
+            $mr = [regex]::Matches($bFaixa.Text, '(\d{1,3}(?:\.\d{1,3}){3})\s*-\s*(\d{1,3}(?:\.\d{1,3}){3})')
+            foreach ($m in $mr) {
+                $ia = $m.Groups[1].Value; $ib = $m.Groups[2].Value
+                if (-not (IpValido $ia) -or -not (IpValido $ib)) { throw "Faixa inválida: $($m.Value) (use 10.1.31.1-10.1.31.254)." }
+                $a1 = IpNum $ia; $a2 = IpNum $ib; if ($a2 -lt $a1) { $tmp = $a1; $a1 = $a2; $a2 = $tmp }
+                if (($a2 - $a1) -gt 1023) { throw "Faixa grande demais em $($m.Value) (máximo 1024 IPs por faixa)." }
+                $ipsF = @(); for ($n = $a1; $n -le $a2; $n++) { $ipsF += (NumIp $n) }
+                $faixasList += @{ Ini = (NumIp $a1); Fim = (NumIp $a2); Ips = $ipsF }
+                $ipsFaixa += $ipsF
+            }
+            $ipsFaixa = @($ipsFaixa | Select-Object -Unique)
+            if ($bFaixa.Text.Trim() -and -not $faixasList.Count) { throw 'Faixa inválida (use 10.1.31.1-10.1.31.254; pode pôr várias separadas por vírgula).' }
+            $doExtra = $bExtra.Checked
+            Log ("Buscador: {0} faixa(s), {1} IP(s); metodos extra (ARP/ONVIF/UPnP/fabrica): {2}" -f $faixasList.Count, $ipsFaixa.Count, $(if ($doExtra) { 'SIM' } else { 'nao' }))
+            $script:BFaixaIps = $ipsFaixa; $script:BIdent2 = $false; $script:BIdent3 = (-not $doExtra)
+            $D = [hashtable]::Synchronized(@{ Run = $true; Fila = (New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'); Status = 'Procurando...'; Vivos = $null; Vivos2 = $null; Vivos3 = $null
+                Ips = $ipsFaixa; Faixas = $faixasList; Porta = $porta; U = $u; S = $s; Feitos = 0; Total = 0; IpsFabrica = @($script:IpsFabrica); DoExtra = $doExtra })
             $script:BuscaD = $D; $script:BIdent = $false
-            # 1) sem senha pela rede (UDP)  e  2) varredura da porta HTTP - as duas ao mesmo tempo
+            # 1) sem senha pela rede (UDP)  e  2) varredura das faixas - ao mesmo tempo
             $script:BTarefas = @(
                 (IniciarBg '$D.Status = "procurando sem senha pela rede..."; foreach ($x in @(BuscarMulticast 4 $D.Ips)) { if ($D.Run) { $D.Fila.Enqueue($x) } }' $D),
                 (IniciarBg @'
 # 1a passada: todos de uma vez, rapida (como antes); 2a: so quem nao respondeu, com calma (pega os retardatarios)
-if ($D.Ini) {
-    $D.Status = "varrendo a faixa..."; $v1 = @(VarrerFaixa $D.Ini $D.Fim $D.Porta 700 1024); $D.Vivos = $v1
-    $resp = @{}; foreach ($x in $v1) { $resp[$x.IP] = 1 }; $resto = @($D.Ips | Where-Object { -not $resp[$_] })
-    if ($D.Run -and $resto.Count) { $D.Status = "conferindo de novo os que não responderam..."; $D.Vivos2 = @(VarrerFaixa $D.Ini $D.Fim $D.Porta 1500 64 $resto) } else { $D.Vivos2 = @() }
-} else { $D.Vivos = @(); $D.Vivos2 = @() }
+$all1 = @(); $all2 = @()
+if ($D.Faixas -and $D.Faixas.Count) {
+    foreach ($fx in $D.Faixas) {
+        if (-not $D.Run) { break }
+        $D.Status = "varrendo a faixa $($fx.Ini)..."; $v1 = @(VarrerFaixa $fx.Ini $fx.Fim $D.Porta 700 1024); $all1 += $v1
+        $resp = @{}; foreach ($x in $v1) { $resp[$x.IP] = 1 }; $resto = @($fx.Ips | Where-Object { -not $resp[$_] })
+        if ($D.Run -and $resto.Count) { $D.Status = "conferindo de novo os que não responderam..."; $all2 += @(VarrerFaixa $fx.Ini $fx.Fim $D.Porta 1500 64 $resto) }
+    }
+}
+$D.Vivos = $all1; $D.Vivos2 = $all2
 '@ $D))
+            # 3) metodos extra (A/C/D/F): tabela ARP, ONVIF, UPnP e IPs de fabrica
+            if ($doExtra) {
+                $script:BTarefas += (IniciarBg @'
+$extra = @{}
+$D.Status = "lendo a tabela ARP do PC..."
+foreach ($a in @(LerArp)) {
+    if (-not $D.Run) { break }
+    $vend = VendorPorMac $a.MAC
+    $mod = if ($vend) { "($vend - tabela ARP)" } else { "(tabela ARP)" }
+    $D.Fila.Enqueue([pscustomobject]@{ IP = $a.IP; Porta = $D.Porta; Modelo = $mod; Serie = ""; MAC = $a.MAC; Firmware = ""; Mascara = ""; Gateway = ""; Dhcp = ""; WifiIP = ""; WifiMAC = ""; Origem = "tabela ARP" })
+    if ($vend) { $extra[$a.IP] = $true }
+}
+$D.Status = "procurando ONVIF (UDP 3702)..."
+foreach ($ip in @(DescobrirOnvif 3)) { if (-not $D.Run) { break }; $extra[$ip] = $true; $D.Fila.Enqueue([pscustomobject]@{ IP = $ip; Porta = $D.Porta; Modelo = "(ONVIF)"; Serie = ""; MAC = ""; Firmware = ""; Mascara = ""; Gateway = ""; Dhcp = ""; WifiIP = ""; WifiMAC = ""; Origem = "ONVIF" }) }
+$D.Status = "procurando UPnP (UDP 1900)..."
+foreach ($ip in @(DescobrirSsdp 3)) { if (-not $D.Run) { break }; $extra[$ip] = $true; $D.Fila.Enqueue([pscustomobject]@{ IP = $ip; Porta = $D.Porta; Modelo = "(UPnP)"; Serie = ""; MAC = ""; Firmware = ""; Mascara = ""; Gateway = ""; Dhcp = ""; WifiIP = ""; WifiMAC = ""; Origem = "UPnP" }) }
+foreach ($ip in @($D.IpsFabrica)) { if (-not $D.Run) { break }; $extra[$ip] = $true; $D.Fila.Enqueue([pscustomobject]@{ IP = $ip; Porta = $D.Porta; Modelo = "(IP de fábrica - testando)"; Serie = ""; MAC = ""; Firmware = ""; Mascara = ""; Gateway = ""; Dhcp = ""; WifiIP = ""; WifiMAC = ""; Origem = "IP de fábrica" }) }
+$D.Vivos3 = @(@($extra.Keys) | ForEach-Object { [pscustomobject]@{ IP = $_; Http = $true; P37777 = $false; Https = $false } })
+'@ $D)
+            }
             $btBuscar.Text = 'PARAR'; $lbSt.Text = 'Buscando...'; $tmB.Start()
         } catch { LogExcecao 'Buscador: erro na busca' $_.Exception; $lbSt.Text = "Erro na busca: $($_.Exception.Message)" }
     })
@@ -1126,7 +1321,8 @@ if ($D.Ini) {
         $sel.D = $null; $rSenha.Text = [string]$script:SenhaPorIp[$lv.SelectedItems[0].Tag.IP]
         $sel.D = $lv.SelectedItems[0].Tag; $tabs.Enabled = $true; $btUsar.Enabled = $true
         $d = $sel.D; $rIp.Text = $d.IP; $rMasc.Text = $d.Mascara; $rGw.Text = $d.Gateway; $rPorta.Text = $d.Porta; $rDns1.Text = ''; $rDns2.Text = ''; $rDhcp.Checked = ($d.Dhcp -eq 'true' -or $d.Dhcp -eq 'True')
-        $rInfo.Text = "Equipamento: $($d.Modelo)  |  série $($d.Serie)  |  MAC $($d.MAC)"
+        $wi = ''; try { if ($d.WifiIP -or $d.WifiMAC) { $wi = "  |  Wi-Fi: $($d.WifiIP) ($($d.WifiMAC))" } } catch {}
+        $rInfo.Text = "Equipamento: $($d.Modelo)  |  série $($d.Serie)  |  MAC $($d.MAC)$wi"
         $pSt.Text = 'Status: -'; $sel.Rede = $null; $sel.Porta = $null; $eTxt.Text = ''
         $lbSt.Text = "Escolhido: $($d.IP) - $($d.Modelo). Use 'Ler do equipamento' para trazer os dados atuais."
         if ($tabs.SelectedTab -eq $tPorta) { $pAuto.Checked = $true; $tmP.Start() }
@@ -1448,7 +1644,7 @@ function AbrirBuscador {
     $script:faixas = @(FaixasDoPc)
     if ($txtIp.Text -and (IpValido $txtIp.Text.Trim())) { $p = $txtIp.Text.Trim().Split('.'); $bFaixa.Text = "$($p[0]).$($p[1]).$($p[2]).1-$($p[0]).$($p[1]).$($p[2]).254" }
     elseif ($script:faixas.Count -and -not $bFaixa.Text) { $bFaixa.Text = $script:faixas[0] }
-    $lbFx.Text = 'Faixas deste PC: ' + ($script:faixas -join '   ')
+    $lbSt.Text = 'Faixas deste PC: ' + ($script:faixas -join '   ') + '   |   Clique em BUSCAR.'
     if ($txtPorta.Text) { $bPorta.Text = $txtPorta.Text }
     if ($txtUser.Text) { $bUser.Text = $txtUser.Text }
     if ($txtSenha.Text) { $bSenha.Text = $txtSenha.Text }
