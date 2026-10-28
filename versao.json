@@ -1,5 +1,5 @@
 {
-  "versao": "4.0",
+  "versao": "5.0",
   "url": "https://nantes3264.github.io/acessovirtual/CapturaFacial.exe",
-  "notas": "- Buscador com abas Porta, Usuarios e Equipamento\n- Status da porta automatico\n- Atualizacao automatica"
+  "notas": "- Mostra o numero da versao na tela principal\n- Buscador com abas Porta, Usuarios e Equipamento\n- Status da porta automatico\n- Atualizacao automatica"
 }
