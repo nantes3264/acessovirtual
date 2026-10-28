@@ -1,4 +1,4 @@
-# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
+﻿# Ferramenta de suporte: video ao vivo do facial + captura de foto remota (Bio-T / Intelbras)  -  versao 3 (com log)
 # v3.5 (27/10/2026): aba "Usuarios" no Buscador (quantidade, busca por cartao decimal/hex com bits, por UserID, lista).
 # v3.4 (27/10/2026): botao "Atualizar" passa a se chamar "Verificar novas versoes" (versao de teste da atualizacao pelo site).
 # v3 (27/10/2026): botao "Buscar IP..." (acha os equipamentos, modelo, se e Bio-T, troca de IP, estado e comandos de porta)
@@ -53,6 +53,8 @@ function LogExcecao($contexto, $ex) {
 }
 IniciarLog
 Log '=== Captura Facial - versao 6.0 ==='
+# deixa o proprio .ps1 oculto (o cliente ve so o .bat/atalho). Nao e protecao, so arrumacao.
+try { $fi = Get-Item -LiteralPath $PSCommandPath -Force; if (-not ($fi.Attributes -band [System.IO.FileAttributes]::Hidden)) { $fi.Attributes = $fi.Attributes -bor [System.IO.FileAttributes]::Hidden; Log 'Arquivo .ps1 marcado como oculto' } } catch { Log ("Nao consegui ocultar o .ps1: {0}" -f $_.Exception.Message) 'AVISO' }
 Log ("Windows: {0} | 64bit: {1}" -f [Environment]::OSVersion.VersionString, [Environment]::Is64BitOperatingSystem)
 Log ("PowerShell: {0} | CLR: {1}" -f $PSVersionTable.PSVersion, $PSVersionTable.CLRVersion)
 Log ("Usuario: {0}\{1} | Computador: {2}" -f $env:USERDOMAIN, $env:USERNAME, $env:COMPUTERNAME)
@@ -435,7 +437,9 @@ $btnAtu.Add_Click({
         $pasta = Join-Path (Split-Path $PSCommandPath) 'versao_anterior'; New-Item -ItemType Directory -Force -Path $pasta | Out-Null
         $copia = Join-Path $pasta ('CAPTURA_FACIAL_{0}_{1}.ps1' -f $vA, (Get-Date -Format 'yyyyMMdd_HHmmss'))
         Copy-Item -LiteralPath $PSCommandPath -Destination $copia -Force
+        try { $fh = Get-Item -LiteralPath $PSCommandPath -Force; $fh.Attributes = ($fh.Attributes -band (-bnot [System.IO.FileAttributes]::Hidden)) } catch {}   # tira o oculto para poder gravar
         [System.IO.File]::WriteAllText($PSCommandPath, $txtNovo, (New-Object System.Text.UTF8Encoding($true)))   # UTF-8 com BOM (acentos no PowerShell 5)
+        try { $fh2 = Get-Item -LiteralPath $PSCommandPath -Force; $fh2.Attributes = $fh2.Attributes -bor [System.IO.FileAttributes]::Hidden } catch {}   # volta a ocultar
         Log "Atualizar: trocado $vA -> $vN (copia em $copia); reabrindo"
         Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
         $f.Close()
